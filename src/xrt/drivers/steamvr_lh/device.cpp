@@ -797,11 +797,14 @@ HmdDevice::get_compositor_info(const struct xrt_device_compositor_mode *mode,
                                struct xrt_device_compositor_info *out_info)
 {
 	time_duration_ns scanout_time_ns;
+	enum xrt_panel_refresh_type panel_refresh_type;
 	enum xrt_scanout_direction scanout_direction;
 
-	vive_variant_scanout_info(this->variant, mode->frame_interval_ns, &scanout_time_ns, &scanout_direction);
+	vive_variant_scanout_info(this->variant, mode->frame_interval_ns, &scanout_time_ns, &scanout_direction,
+	                          &panel_refresh_type);
 
 	(*out_info) = {
+	    .panel_refresh_type = panel_refresh_type,
 	    .scanout_direction = scanout_direction,
 	    .scanout_time_ns = scanout_time_ns,
 	};
