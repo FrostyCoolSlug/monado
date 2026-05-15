@@ -611,7 +611,7 @@ stop_everything_if_hands_are_overlapping(struct HandTracking *hgt)
 		if (!left_box.found || !right_box.found) {
 			continue;
 		}
-		box_iou::Box this_nbox(left_box.center_px, right_box.size_px);
+		box_iou::Box this_nbox(left_box.center_px, left_box.size_px);
 		box_iou::Box other_nbox(right_box.center_px, right_box.size_px);
 		float iou = box_iou::boxIOU(this_nbox, other_nbox);
 		if (iou > hgt->tuneable_values.mpiou_any.val) {
