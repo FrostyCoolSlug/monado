@@ -867,7 +867,7 @@ run_keypoint_estimation_unsafe(keypoint_estimation_run_info &info)
 		variance += 0.01;
 
 		this_output.curls[i].value = curl;
-		this_output.curls[i].variance = curl;
+		this_output.curls[i].variance = variance;
 	}
 
 
