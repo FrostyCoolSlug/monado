@@ -147,7 +147,7 @@ hand_init_guess(one_frame_input &observation, const float hand_size, xrt_pose le
 	wrist_global_sum = m_vec3_mul_scalar(wrist_global_sum, 1.0f / (float)num_observation_views);
 	midpxm_global_sum = m_vec3_mul_scalar(midpxm_global_sum, 1.0f / (float)num_observation_views);
 	indpxm_global_sum = m_vec3_mul_scalar(indpxm_global_sum, 1.0f / (float)num_observation_views);
-	litpxm_global_sum = m_vec3_mul_scalar(wrist_global_sum, 1.0f / (float)num_observation_views);
+	litpxm_global_sum = m_vec3_mul_scalar(litpxm_global_sum, 1.0f / (float)num_observation_views);
 
 	out_wrist_guess.position = wrist_global_sum;
 
