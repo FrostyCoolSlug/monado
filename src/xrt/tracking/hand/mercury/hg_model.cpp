@@ -840,7 +840,7 @@ run_keypoint_estimation_unsafe(keypoint_estimation_run_info &info)
 
 	float is_hand_explicit = out_data_extras[0];
 
-	is_hand_explicit = (1.0) / (1.0 + powf(2.71828182845904523536, -is_hand_explicit));
+	is_hand_explicit = (1.0) / (1.0 + expf(-is_hand_explicit));
 
 	// When the model is sure, it's _really_ sure.
 	// Index was fine with 0.99.
