@@ -786,7 +786,7 @@ run_keypoint_estimation_unsafe(keypoint_estimation_run_info &info)
 
 		// This will be optimized out if nan checking is disabled in hg_numerics_checker
 		for (size_t x = 0; x < plane_size; x++) {
-			CHECK_NOT_NAN(data[i]);
+			CHECK_NOT_NAN(data[x]);
 		}
 
 
