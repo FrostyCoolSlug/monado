@@ -175,7 +175,7 @@ struct hand_region_of_interest
 	float size_px;
 
 	bool found;
-	bool hand_detection_confidence;
+	float hand_detection_confidence;
 };
 
 
