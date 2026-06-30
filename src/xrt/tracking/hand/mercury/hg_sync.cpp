@@ -794,7 +794,7 @@ callback_process_unsafe(HandTracking *hgt,
 
 	// Every now and then if we're not already tracking both hands, try to detect new hands.
 	bool saw_both_hands_last_frame = hgt->last_frame_hand_detected[0] && hgt->last_frame_hand_detected[1];
-	if (!saw_both_hands_last_frame) {
+	if (!saw_both_hands_last_frame || hgt->tuneable_values.always_run_detection_model) {
 		dispatch_and_process_hand_detections(hgt);
 	}
 
