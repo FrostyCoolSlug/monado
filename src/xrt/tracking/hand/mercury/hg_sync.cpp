@@ -921,8 +921,6 @@ callback_process_unsafe(HandTracking *hgt,
 				double diff_d = time_ns_to_s(diff);
 				smoothing_factor = hgt->tuneable_values.opt_smooth_factor.val * (1 / 60.0f) / diff_d;
 			}
-		} else {
-			reprojection_error_threshold = hgt->tuneable_values.max_reprojection_error.val;
 		}
 
 
