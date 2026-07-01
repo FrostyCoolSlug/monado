@@ -373,7 +373,7 @@ check_new_user_event(struct HandTracking *hgt)
 }
 
 
-
+/// The area the intersection of these regions of interest, relative to the combined area (Intersection Over Union)
 static float
 hand_bounding_boxes_iou(const hand_region_of_interest &one, const hand_region_of_interest &two)
 {
@@ -480,8 +480,7 @@ dispatch_and_process_hand_detections(struct HandTracking *hgt)
 					if (iou > hgt->tuneable_values.mpiou_single_detection.val) {
 						HG_DEBUG(hgt,
 						         "Rejected single detection because the iou for hand idx %d, "
-						         "view idx "
-						         "%d was %f",
+						         "view idx %d was %f",
 						         hand_idx, view_idx, iou);
 						good_to_go = false;
 						break;
@@ -583,6 +582,7 @@ predict_new_regions_of_interest(struct HandTracking *hgt)
 				hroi.provenance = ROIProvenance::POSE_PREDICTION;
 				hroi.found = true;
 
+				// Scale factor for uncertainty
 				const float SCALER = 1.25f;
 				float s = hroi.size_px * SCALER;
 				xrt_vec2 &c = hroi.center_px;
@@ -840,6 +840,7 @@ callback_process_unsafe(HandTracking *hgt,
 	u_worker_group_wait_all(hgt->group);
 
 	// Spaghetti logic for optimizing hand size
+	// TODO factor this out into an object to hide these state machine heuristics
 	bool any_hands_are_only_visible_in_one_view = false;
 
 	for (int hand_idx = 0; hand_idx < 2; hand_idx++) {
@@ -902,7 +903,8 @@ callback_process_unsafe(HandTracking *hgt,
 			continue;
 		}
 
-
+		// propagate "no ROI" to "no keypoint outputs"
+		// TODO seems redundant?
 		for (int view = 0; view < 2; view++) {
 			hand_region_of_interest &from_model = hgt->views[view].regions_of_interest_this_frame[hand_idx];
 			if (!from_model.found) {
