@@ -151,11 +151,20 @@ check_outside_view(struct HandTracking *hgt, struct t_camera_extra_info_one_view
 	return false;
 }
 
+/*!
+ * Transform 3d joint keypoint positions into per-view camera coordinates
+ *
+ * @param[in,out] hgt Hand tracking global structure
+ * @param[in] pts Keypoints (in world space relative to left camera?)
+ * @param[in] hand_idx 0 is left, 1 is right
+ * @param[in] also_debug_output if true, will also draw on the debug image
+ * @param[out] num_outside optional count of keypoints outside of bounds per view
+ */
 static void
-back_project(struct HandTracking *hgt,        //
-             Eigen::Array<float, 3, 21> &pts, //
-             int hand_idx,                    //
-             bool also_debug_output,          //
+back_project(struct HandTracking *hgt,              //
+             const Eigen::Array<float, 3, 21> &pts, //
+             int hand_idx,                          //
+             bool also_debug_output,                //
              int num_outside[2])
 {
 
@@ -173,9 +182,14 @@ back_project(struct HandTracking *hgt,        //
 		Eigen::Vector3f p = map_vec3(move_amount.position);
 		Eigen::Quaternionf q = map_quat(move_amount.orientation);
 
+		// 3 rows (xyz), 21 cols (on for each keypoint)
 		Eigen::Array<float, 3, 21> pts_relative_to_camera = {};
 
 		bool invalid[21] = {};
+
+		// TODO is this sufficient?
+		// Eigen::Matrix3f rot = q.matrix();
+		// pts_relative_to_camera = (pts.colwise() * rot).colwise() + p;
 
 		for (int i = 0; i < 21; i++) {
 			pts_relative_to_camera.col(i) = (q * pts.col(i)) + p;
@@ -185,6 +199,8 @@ back_project(struct HandTracking *hgt,        //
 			}
 		}
 
+		// in 2D camera space... normalized?
+		// TODO these stay uninitialized if the point is already considered "invalid" - probable UB later
 		xrt_vec2 keypoints_global[21];
 
 		for (int i = 0; i < 21; i++) {
