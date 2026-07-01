@@ -1,4 +1,4 @@
-// Copyright 2022, Collabora, Ltd.
+// Copyright 2022-2026, Collabora, Ltd.
 // SPDX-License-Identifier: BSL-1.0
 /*!
  * @file
@@ -21,6 +21,7 @@
 #include "xrt/xrt_tracking.h"
 
 
+#include <algorithm>
 #include <numeric>
 
 
@@ -203,12 +204,7 @@ back_project(struct HandTracking *hgt,        //
 		}
 
 		if (num_outside != NULL) {
-			num_outside[view_idx] = 0;
-			for (int i = 0; i < 21; i++) {
-				if (invalid[i]) {
-					num_outside[view_idx]++;
-				}
-			}
+			num_outside[view_idx] = std::count(std::begin(invalid), std::end(invalid), true);
 
 			xrt_vec2 min = keypoints_global[0];
 			xrt_vec2 max = keypoints_global[0];
