@@ -52,8 +52,22 @@ rift_touch_controller_get_tracked_pose(struct xrt_device *xdev,
 			                          XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT |
 			                          XRT_SPACE_RELATION_ANGULAR_VELOCITY_VALID_BIT;
 
-			(*out_relation) = relation;
+			if (controller->use_constellation) {
+				// borrow the angular velocity from the IMU, but just use the constellation position and
+				// orientation
+				struct xrt_vec3 ang_vel = relation.angular_velocity;
+				m_relation_history_get(controller->constellation_relation_history, at_timestamp_ns,
+				                       &relation);
+				relation.angular_velocity = ang_vel;
+				relation.relation_flags = XRT_SPACE_RELATION_POSITION_VALID_BIT |
+				                          XRT_SPACE_RELATION_POSITION_TRACKED_BIT |
+				                          XRT_SPACE_RELATION_ORIENTATION_VALID_BIT |
+				                          XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT |
+				                          XRT_SPACE_RELATION_ANGULAR_VELOCITY_VALID_BIT;
+			}
 		}
+
+		(*out_relation) = relation;
 		break;
 	}
 	default: return XRT_ERROR_INPUT_UNSUPPORTED;
