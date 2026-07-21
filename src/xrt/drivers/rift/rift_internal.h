@@ -768,6 +768,17 @@ struct rift_touch_controller
 
 	enum rift_radio_device_type device_type;
 
+	bool use_constellation;
+	struct m_relation_history *constellation_relation_history;
+
+	bool constellation_mutex_created;
+	struct os_mutex constellation_mutex;
+	// The constellation related fields below should not be touched unless a lock is held on the above mutex.
+	struct t_constellation_tracker *constellation_tracker;
+	struct t_constellation_tracker_device constellation_device;
+	struct t_constellation_tracker_tracking_source constellation_tracking_source;
+	t_constellation_device_id_t constellation_device_id;
+
 	struct
 	{
 		bool mutex_created;
