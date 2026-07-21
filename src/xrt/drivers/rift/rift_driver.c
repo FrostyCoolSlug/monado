@@ -493,8 +493,8 @@ rift_read_led_model(struct rift_hmd *hmd)
 			hmd->led_model.leds[hmd->led_model.led_count++] = (struct t_constellation_tracker_led){
 			    .position = pos,
 			    .normal = normal,
-			    .radius_m = 0.0035f,                   // 3.5mm
-			    .visibility_angle = DEG_TO_RAD(90.0f), // TODO: tune this value properly
+			    .radius_m = RIFT_LED_SIZE_M,                 // 3.5mm
+			    .visibility_angle = RIFT_LED_VISIBILITY_RAD, // TODO: tune this value properly
 			    .id = (t_constellation_led_id_it)position_report.position_index,
 			};
 		}

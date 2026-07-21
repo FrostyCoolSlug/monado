@@ -72,6 +72,9 @@
 
 #define IN_REPORT_RADIO_DATA_SIZE 64
 
+#define RIFT_LED_SIZE_M 0.0035f                   // 3.5mm
+#define RIFT_LED_VISIBILITY_RAD DEG_TO_RAD(90.0f) // TODO: tune this value properly
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -710,13 +713,6 @@ enum rift_touch_controller_input
 	RIFT_TOUCH_CONTROLLER_INPUT_COUNT = 16,
 };
 
-struct rift_touch_controller_led
-{
-	struct xrt_vec3 position;
-	struct xrt_vec3 normal;
-	struct xrt_vec3 angles;
-};
-
 struct rift_touch_controller_calibration
 {
 	uint16_t joy_x_range[2];
@@ -741,8 +737,7 @@ struct rift_touch_controller_calibration
 
 	struct xrt_vec3 imu_position;
 
-	size_t num_leds;
-	struct rift_touch_controller_led *leds;
+	struct t_constellation_tracker_led_model led_model;
 };
 
 struct rift_touch_controller_input_state

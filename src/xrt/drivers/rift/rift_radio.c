@@ -185,8 +185,8 @@ rift_touch_controller_node_destroy(struct xrt_frame_node *node)
 		free(controller->radio_data.calibration_body_json);
 	}
 
-	if (controller->input.calibration.leds) {
-		free(controller->input.calibration.leds);
+	if (controller->input.calibration.led_model.leds) {
+		free(controller->input.calibration.led_model.leds);
 	}
 
 	if (controller->input.clock_tracker) {
