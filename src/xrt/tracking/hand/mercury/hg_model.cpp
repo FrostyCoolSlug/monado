@@ -846,7 +846,7 @@ run_keypoint_estimation_unsafe(keypoint_estimation_run_info &info)
 	// Index was fine with 0.99.
 	// North Star seemed to need 0.97.
 	if (is_hand_explicit < 0.97) {
-		U_LOG_D("Not hand! %f", is_hand_explicit);
+		HG_DEBUG(hgt, "Not hand! %f", is_hand_explicit);
 		is_hand = false;
 	}
 
