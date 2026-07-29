@@ -22,6 +22,7 @@
 
 
 #include <algorithm>
+#include <array>
 #include <numeric>
 
 
@@ -336,20 +337,6 @@ handle_changed_image_size(HandTracking *hgt, xrt_size &new_one_view_size)
 	return true;
 }
 
-float
-hand_confidence_value(float reprojection_error, one_frame_input &input)
-{
-	float out_confidence = 0.0f;
-	for (int view_idx = 0; view_idx < 2; view_idx++) {
-		for (int i = 0; i < 21; i++) {
-			// whatever
-			out_confidence += input.views[view_idx].keypoints_in_scaled_stereographic[i].confidence_xy;
-		}
-	}
-	out_confidence /= 42.0f; // number of hand joints
-	float reproj_err_mul = 1.0f / ((reprojection_error * 10) + 1.0f);
-	return out_confidence * reproj_err_mul;
-}
 
 
 xrt_vec3
@@ -366,9 +353,7 @@ check_new_user_event(struct HandTracking *hgt)
 		hgt->tuneable_values.new_user_event = false;
 		hgt->hand_seen_before[0] = false;
 		hgt->hand_seen_before[1] = false;
-		hgt->refinement.hand_size_refinement_schedule_x = 0;
-		hgt->refinement.optimizing = true;
-		hgt->target_hand_size = STANDARD_HAND_SIZE;
+		hgt->hand_size_refinement.newUserEvent();
 	}
 }
 
@@ -422,7 +407,7 @@ dispatch_and_process_hand_detections(struct HandTracking *hgt)
 
 	int num_views = 0;
 
-	if (hgt->tuneable_values.always_run_detection_model || hgt->refinement.optimizing ||
+	if (hgt->tuneable_values.always_run_detection_model || hgt->hand_size_refinement.isOptimizing() ||
 	    hgt->tuneable_values.detection_model_in_both_views) {
 		u_worker_group_push(hgt->group, run_hand_detection, &infos[0]);
 		u_worker_group_push(hgt->group, run_hand_detection, &infos[1]);
@@ -839,49 +824,42 @@ callback_process_unsafe(HandTracking *hgt,
 	}
 	u_worker_group_wait_all(hgt->group);
 
-	// Spaghetti logic for optimizing hand size
-	// TODO factor this out into an object to hide these state machine heuristics
-	bool any_hands_are_only_visible_in_one_view = false;
-
-	for (int hand_idx = 0; hand_idx < 2; hand_idx++) {
-		any_hands_are_only_visible_in_one_view =                             //
-		    any_hands_are_only_visible_in_one_view ||                        //
-		    (hgt->views[0].regions_of_interest_this_frame[hand_idx].found != //
-		     hgt->views[1].regions_of_interest_this_frame[hand_idx].found);
-	}
-
-	constexpr float mul_max = 1.0;
-	constexpr float frame_max = 100;
+	// Hand size refinement/optimization state
 	bool optimize_hand_size;
+	{
+		constexpr size_t kLH = 0;
+		constexpr size_t kRH = 1;
 
-	if ((hgt->refinement.hand_size_refinement_schedule_x > frame_max)) {
-		hgt->refinement.hand_size_refinement_schedule_y = mul_max;
-		optimize_hand_size = false;
-		hgt->refinement.optimizing = false;
-	} else {
-		hgt->refinement.hand_size_refinement_schedule_y =
-		    powf((hgt->refinement.hand_size_refinement_schedule_x / frame_max), 2) * mul_max;
-		optimize_hand_size = true;
-		hgt->refinement.optimizing = true;
+		// input data
+
+		const std::array<HandSizeRefinement::ViewData, kNumViews> view_data{
+		    HandSizeRefinement::ViewData{{
+		        {hgt->views[0].regions_of_interest_this_frame[kLH].found},
+		        {hgt->views[0].regions_of_interest_this_frame[kRH].found},
+		    }},
+		    HandSizeRefinement::ViewData{{
+		        {hgt->views[1].regions_of_interest_this_frame[kLH].found},
+		        {hgt->views[1].regions_of_interest_this_frame[kRH].found},
+		    }},
+		};
+
+		const std::array<HandSizeRefinement::HandData, kNumHands> hand_data{
+		    HandSizeRefinement::HandData{
+		        .this_frame_hand_detected = hgt->this_frame_hand_detected[0],
+		        .hand_seen_before = hgt->hand_seen_before[0],
+		    },
+		    HandSizeRefinement::HandData{
+		        .this_frame_hand_detected = hgt->this_frame_hand_detected[1],
+		        .hand_seen_before = hgt->hand_seen_before[1],
+		    },
+		};
+
+		optimize_hand_size = hgt->hand_size_refinement.framePreOptimizer(view_data, hand_data);
+
+		hgt->target_hand_size = hgt->hand_size_refinement.getTargetHandSize();
+
+		optimize_hand_size = optimize_hand_size && hgt->tuneable_values.optimize_hand_size;
 	}
-
-	if (any_hands_are_only_visible_in_one_view) {
-		optimize_hand_size = false;
-	}
-
-
-	// if either hand was not visible before the last new-user event but is visible now, reset the schedule
-	// a bit.
-	if ((hgt->this_frame_hand_detected[0] && !hgt->hand_seen_before[0]) ||
-	    (hgt->this_frame_hand_detected[1] && !hgt->hand_seen_before[1])) {
-		hgt->refinement.hand_size_refinement_schedule_x =
-		    std::min(hgt->refinement.hand_size_refinement_schedule_x, frame_max / 2);
-	}
-
-	optimize_hand_size = optimize_hand_size && hgt->tuneable_values.optimize_hand_size;
-
-	int num_hands = 0;
-	float avg_hand_size = 0;
 
 	// Dispatch the optimizers!
 	for (int hand_idx = 0; hand_idx < 2; hand_idx++) {
@@ -953,7 +931,7 @@ callback_process_unsafe(HandTracking *hgt,
 		                  smoothing_factor,
 		                  optimize_hand_size,                              //
 		                  hgt->target_hand_size,                           //
-		                  hgt->refinement.hand_size_refinement_schedule_y, //
+		                  hgt->hand_size_refinement.getHandSizeErrorMul(), //
 		                  hgt->tuneable_values.amt_use_depth.val,
 		                  *put_in_set,   //
 		                  out_hand_size, //
@@ -974,13 +952,8 @@ callback_process_unsafe(HandTracking *hgt,
 		}
 
 
-		avg_hand_size += out_hand_size;
-		num_hands++;
-
-		if (!any_hands_are_only_visible_in_one_view) {
-			hgt->refinement.hand_size_refinement_schedule_x +=
-			    hand_confidence_value(reprojection_error, hgt->keypoint_outputs[hand_idx]);
-		}
+		hgt->hand_size_refinement.frameHandPostOptimizer(out_hand_size, reprojection_error,
+		                                                 hgt->keypoint_outputs[hand_idx]);
 
 		u_hand_joints_apply_joint_width(put_in_set);
 
@@ -1009,10 +982,7 @@ callback_process_unsafe(HandTracking *hgt,
 	// Push our timestamp back as well
 	hgt->history_timestamps.push_back(hgt->current_frame_timestamp);
 
-	// More hand-size-optimization spaghetti
-	if (num_hands > 0) {
-		hgt->target_hand_size = (float)avg_hand_size / (float)num_hands;
-	}
+	hgt->hand_size_refinement.framePost();
 
 	// State tracker tweaks
 	for (int hand_idx = 0; hand_idx < 2; hand_idx++) {
@@ -1189,9 +1159,9 @@ t_hand_tracking_sync_mercury_create(struct t_stereo_camera_calibration *calib,
 	u_var_add_ro_f32(hgt, &hgt->ft_widget.fps, "FPS!");
 	u_var_add_f32_timing(hgt, hgt->ft_widget.debug_var, "Frame timing!");
 
-	u_var_add_f32(hgt, &hgt->target_hand_size, "Hand size (Meters between wrist and middle-proximal joint)");
-	u_var_add_ro_f32(hgt, &hgt->refinement.hand_size_refinement_schedule_x, "Schedule (X value)");
-	u_var_add_ro_f32(hgt, &hgt->refinement.hand_size_refinement_schedule_y, "Schedule (Y value)");
+	u_var_add_ro_f32(hgt, &hgt->target_hand_size, "Hand size (Meters between wrist and middle-proximal joint)");
+	// u_var_add_ro_f32(hgt, &hgt->refinement.hand_size_refinement_schedule_x, "Schedule (X value)");
+	// u_var_add_ro_f32(hgt, &hgt->refinement.hand_size_refinement_schedule_y, "Schedule (Y value)");
 
 
 	u_var_add_bool(hgt, &hgt->tuneable_values.new_user_event, "Estimate hand sizes");
