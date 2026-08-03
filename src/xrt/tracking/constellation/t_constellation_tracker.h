@@ -134,6 +134,12 @@ t_constellation_tracker_remove_device(struct t_constellation_tracker *tracker, t
 struct xrt_tracking_origin *
 t_constellation_tracker_get_tracking_origin(struct t_constellation_tracker *tracker);
 
+int
+t_constellation_tracker_get_tracked_pose(struct t_constellation_tracker *tracker,
+                                         t_constellation_device_id_t device,
+                                         timepoint_ns when_ns,
+                                         struct xrt_space_relation *out_relation);
+
 #ifdef __cplusplus
 }
 #endif

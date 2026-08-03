@@ -39,6 +39,8 @@ enum class PoseStateIndex : int
 	NumIndices = 7,
 };
 
+constexpr int kPoseStatePosStart = static_cast<int>(PoseStateIndex::PosX);
+constexpr int kPoseStateRotStart = static_cast<int>(PoseStateIndex::RotX);
 constexpr int kPoseStateSize = static_cast<int>(PoseStateIndex::NumIndices);
 
 enum class CovarianceIndex : int
@@ -72,7 +74,6 @@ typedef double RawPoseCovarianceMatrix[kPoseCovarianceSize * kPoseCovarianceSize
  * @param device_id           The device ID to optimize the pose for.
  * @param[out] out_pose       The optimized pose will be written to this variable.
  * @param[out] out_covariance The covariance of the final pose will be written to this variable, if not nullptr.
- * @param[out] out_whitening  The whitening matrix of the pose, must be non-nullptr if out_covariance is set.
  *
  * @return true if the optimization was successful, false otherwise.
  */
@@ -86,8 +87,7 @@ optimizePose(u_logging_level log_level,
              t_constellation_tracker_led_model *leds_model,
              t_constellation_device_id_t device_id,
              xrt_pose &out_pose,
-             RawPoseCovarianceMatrix out_covariance,
-             RawPoseCovarianceMatrix out_whitening);
+             RawPoseCovarianceMatrix out_covariance);
 
 /*!
  * Computes the covariance of a pose given the initial pose, blobs, and LED model.
@@ -100,7 +100,6 @@ optimizePose(u_logging_level log_level,
  * @param leds_model          The LED model to use for the optimization.
  * @param device_id           The device ID to compute the covariance for.
  * @param[out] out_covariance The covariance of the final pose will be written to this variable.
- * @param[out] out_whitening  The whitening matrix of the pose, must be non-nullptr if out_covariance is set.
  *
  * @return void
  */
@@ -112,8 +111,7 @@ computePoseCovariance(u_logging_level log_level,
                       uint32_t num_blobs,
                       t_constellation_tracker_led_model *leds_model,
                       t_constellation_device_id_t device_id,
-                      RawPoseCovarianceMatrix out_covariance,
-                      RawPoseCovarianceMatrix out_whitening);
+                      RawPoseCovarianceMatrix out_covariance);
 
 /*!
  * Computes the radii and covariance orientation from the 3x3 position part of the pose covariance matrix

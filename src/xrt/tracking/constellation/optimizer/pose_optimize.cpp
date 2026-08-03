@@ -33,7 +33,7 @@
 
 #include "pose_optimize.hpp"
 #include "ransac.hpp"
-#include "math.hpp"
+#include "internal_math.hpp"
 
 #include <iostream>
 #include <stdio.h>
@@ -41,12 +41,8 @@
 
 namespace {
 
-//! Optimize directly on the pre-undistorted points, don't compute residuals in distorted pixel space.
-constexpr bool kOptimizeUndistortedPoints = false;
 //! Run a RANSAC inlier optimization before the final optimization.
 constexpr bool kRunRansac = true;
-//! Print debug info about the residuals as we're computing them.
-constexpr bool kResidualDebugPrint = false;
 
 using namespace xrt::auxiliary::math;
 using namespace xrt::auxiliary::tracking::camera_models;
@@ -55,217 +51,48 @@ using namespace xrt::tracking::constellation::optimizer;
 
 // @todo tune this number
 #define BAD_COVARIANCE_MATRIX (PoseStateCovarianceMatrix::Identity() * 1e6)
-// Matching whitener for BAD_COVARIANCE_MATRIX, sqrt(1/1e6). A failed covariance stops mattering rather than
-// contributing a full-strength bogus factor.
-#define BAD_WHITENING_MATRIX (PoseStateCovarianceMatrix::Identity() * 1e-3)
-
-template <typename T> struct Pose
-{
-public: // Fields
-	Eigen::Vector3<T> translation;
-	Eigen::Quaternion<T> rotation;
-
-public: // Methods
-	Pose(Eigen::Vector3<T> translation, Eigen::Quaternion<T> rotation)
-	    : translation(translation), rotation(rotation)
-	{}
-
-	//! Seeds a Pose from a translation.
-	Pose(const xrt_pose &pose)
-	{
-		if constexpr (std::is_same_v<T, double>) {
-			// Seed the translation
-			this->translation.x() = pose.position.x;
-			this->translation.y() = pose.position.y;
-			this->translation.z() = pose.position.z;
-
-			// Seed the rotation
-			this->rotation.x() = pose.orientation.x;
-			this->rotation.y() = pose.orientation.y;
-			this->rotation.z() = pose.orientation.z;
-			this->rotation.w() = pose.orientation.w;
-
-			this->rotation.normalize();
-		} else {
-			// Seed the translation
-			this->translation.x() = T(pose.position.x, static_cast<int>(PoseStateIndex::PosX));
-			this->translation.y() = T(pose.position.y, static_cast<int>(PoseStateIndex::PosY));
-			this->translation.z() = T(pose.position.z, static_cast<int>(PoseStateIndex::PosZ));
-
-			// Seed the rotation
-			this->rotation.x() = T(pose.orientation.x, static_cast<int>(PoseStateIndex::RotX));
-			this->rotation.y() = T(pose.orientation.y, static_cast<int>(PoseStateIndex::RotY));
-			this->rotation.z() = T(pose.orientation.z, static_cast<int>(PoseStateIndex::RotZ));
-			this->rotation.w() = T(pose.orientation.w, static_cast<int>(PoseStateIndex::RotW));
-
-			this->rotation.normalize();
-		}
-	}
-
-	//! Packs the Pose into a solver parameter vector.
-	Eigen::Vector<T, kPoseStateSize>
-	pack() const
-	{
-		Eigen::Vector<T, kPoseStateSize> solver_params;
-		solver_params.template segment<3>(static_cast<int>(PoseStateIndex::PosX)) = this->translation;
-		solver_params.template segment<4>(static_cast<int>(PoseStateIndex::RotX)) = this->rotation.coeffs();
-		return solver_params;
-	}
-
-	//! Unpacks a solver parameter vector into an xrt_pose.
-	static xrt_pose
-	unpackToPose(const Eigen::Vector<double, kPoseStateSize> &parameters)
-	{
-		xrt_pose pose;
-		map_vec3(pose.position) = parameters.segment<3>(static_cast<int>(PoseStateIndex::PosX)).cast<float>();
-		map_quat(pose.orientation) =
-		    parameters.segment<4>(static_cast<int>(PoseStateIndex::RotX)).cast<float>();
-
-		return pose;
-	}
-
-	template <typename Derived>
-	static Pose<T>
-	unpack(Eigen::Ref<const Eigen::Vector<Derived, kPoseStateSize>> parameters)
-	{
-		const auto translation =
-		    parameters.template segment<3>(static_cast<int>(PoseStateIndex::PosX)).template cast<T>();
-		const auto rotation = Eigen::Quaternion<T>(
-		    parameters.template segment<4>(static_cast<int>(PoseStateIndex::RotX)).template cast<T>());
-
-		return Pose<T>(translation, rotation);
-	}
-};
-
-template <typename T>
-void
-project_led(const t_camera_model_params &params,
-            const Eigen::Quaternion<T> &Q_cam_model,
-            const Eigen::Vector3<T> &T_cam_model,
-            const Eigen::Vector3<T> &T_model_led,
-            Eigen::Vector2<T> &out_projected_point,
-            T *led_depth_m)
-{
-	// Rotate the point around the pose's local frame.
-	Eigen::Vector3<T> T_cam_led = Q_cam_model * T_model_led;
-	// Translate the point into the camera frame.
-	T_cam_led += T_cam_model;
-
-	if (led_depth_m != nullptr) {
-		*led_depth_m = T_cam_led.z();
-	}
-
-	Eigen::Vector2<T> projected_point = {T(1e6), T(1e6)};
-
-	if (T_cam_led.z() <= T(0)) {
-		// The point is behind the camera, so we can't project it. Return a large value to indicate this.
-		out_projected_point = projected_point;
-		return;
-	}
-
-	if constexpr (kOptimizeUndistortedPoints) {
-		// We're optimizing directly on undistorted points, so we don't project the points through the
-		// distortion model. Instead, we just use the normalized camera coordinates.
-		projected_point.x() = T_cam_led.x() / T_cam_led.z();
-		projected_point.y() = T_cam_led.y() / T_cam_led.z();
-	} else {
-		// Project the point into the camera frame, ignore error, since even if the projection fails, it
-		// still always returns *some* value with possibly meaningful derivatives.
-		// (unless in case of memory corruption which no derivative 1e6 is *fine*).
-		(void)project(params,               //
-		              T_cam_led.x(),        //
-		              T_cam_led.y(),        //
-		              T_cam_led.z(),        //
-		              projected_point.x(),  //
-		              projected_point.y()); //
-	}
-
-	out_projected_point = projected_point;
-}
-
-template <typename T, typename Derived>
-void
-computeSingleResidual(const t_camera_model_params &params,
-                      const Eigen::Vector3<T> &T_cam_model,
-                      const Eigen::Quaternion<T> &Q_cam_model,
-                      const Eigen::Vector2<T> &blob_position_2d,
-                      const Eigen::Vector3<T> &T_model_led,
-                      Eigen::MatrixBase<Derived> &residual)
-{
-	Eigen::Vector2<T> predicted_point;
-	T led_depth;
-	project_led<T>(params,          //
-	               Q_cam_model,     //
-	               T_cam_model,     //
-	               T_model_led,     //
-	               predicted_point, //
-	               &led_depth);     //
-
-	if constexpr (kResidualDebugPrint) {
-		if constexpr (std::is_same_v<T, double>) {
-			U_LOG_W("meas=(%f,%f)", blob_position_2d.x(), blob_position_2d.y());
-			U_LOG_W("pred=(%f,%f)", predicted_point.x(), predicted_point.y());
-
-			U_LOG_W("pose=(%f,%f,%f), (%f,%f,%f)", T_cam_model.x(), T_cam_model.y(), T_cam_model.z(),
-			        Q_cam_model.x(), Q_cam_model.y(), Q_cam_model.z());
-
-			if (std::isnan(predicted_point.x()) || std::isnan(predicted_point.y())) {
-				U_LOG_W("Projected point is NaN, led_depth=%f", led_depth);
-
-				// XRT_DEBUGBREAK();
-			}
-		} else {
-			U_LOG_W("meas=(%f,%f)", blob_position_2d.x().a, blob_position_2d.y().a);
-			U_LOG_W("pred=(%f,%f)", predicted_point.x().a, predicted_point.y().a);
-
-			U_LOG_W("pose=(%f,%f,%f), (%f,%f,%f)", T_cam_model.x().a, T_cam_model.y().a, T_cam_model.z().a,
-			        Q_cam_model.x().a, Q_cam_model.y().a, Q_cam_model.z().a);
-
-			if (std::isnan(predicted_point.x().a) || std::isnan(predicted_point.y().a)) {
-				U_LOG_W("Projected point is NaN, led_depth=%f", led_depth.a);
-
-				// XRT_DEBUGBREAK();
-			}
-		}
-	}
-
-	// Compute the residual
-	residual = predicted_point - blob_position_2d;
-
-	// Provide a smooth penalty for points behind the camera, since if we just set a large residual,
-	// the solver will have no derivative to try to work back from. This solution penalizes bad
-	// poses, while pushing the optimizer towards the correct solution (no LEDs behind the camera).
-	if (led_depth < T(0.001)) {
-		residual += Eigen::Vector2<T>::Constant(T(1000) * (T(0.001) - T(led_depth)));
-	}
-}
 
 struct PnPOptimizeCostFunctor
 {
+private: // Fields
 	uint32_t num_leds;
-	std::vector<Eigen::Vector2f> blob_positions;
-	std::vector<Eigen::Vector3f> T_model_leds;
+	const std::vector<Eigen::Vector2f> &blob_positions;
+	const std::vector<Eigen::Vector3f> &T_model_leds;
 	const t_camera_model_params &params;
+
+public: // Methods
+	PnPOptimizeCostFunctor(uint32_t num_leds,
+	                       const std::vector<Eigen::Vector2f> &blob_positions,
+	                       const std::vector<Eigen::Vector3f> &T_model_leds,
+	                       const t_camera_model_params &params)
+	    : num_leds(num_leds), blob_positions(blob_positions), T_model_leds(T_model_leds), params(params)
+	{}
+
+	int
+	numResiduals() const
+	{
+		// X and Y for each LED. Ceres likes it's ints.
+		return static_cast<int>(this->num_leds * kNumLedResiduals);
+	}
 
 	template <typename T>
 	bool
 	operator()(const T *const parameters, T *residuals) const
 	{
-		const Pose<T> pose =
-		    Pose<T>::template unpack<T>(Eigen::Map<const Eigen::Vector<T, kPoseStateSize>>(parameters));
+		const auto pose = Pose<T>(Eigen::Map<const Eigen::Vector<T, kPoseStateSize>>(parameters));
 
 		for (uint32_t i = 0; i < this->num_leds; i++) {
 			const Eigen::Vector2<T> blob_position_2d = this->blob_positions[i].cast<T>();
 			const Eigen::Vector3<T> T_model_led = this->T_model_leds[i].cast<T>();
 
-			Eigen::Map<Eigen::Vector2<T>> residual(&residuals[i * 2]);
+			Eigen::Map<Eigen::Vector2<T>> residual(&residuals[i * kNumLedResiduals]);
 
-			computeSingleResidual(this->params,     //
-			                      pose.translation, //
-			                      pose.rotation,    //
-			                      blob_position_2d, //
-			                      T_model_led,      //
-			                      residual);        //
+			computeLedResidual(this->params,     //
+			                   pose.translation, //
+			                   pose.rotation,    //
+			                   blob_position_2d, //
+			                   T_model_led,      //
+			                   residual);        //
 		}
 
 		return true;
@@ -273,27 +100,6 @@ struct PnPOptimizeCostFunctor
 };
 
 typedef ceres::AutoDiffCostFunction<PnPOptimizeCostFunctor, ceres::DYNAMIC, kPoseStateSize> CostFunction;
-
-/*!
- * Finds a LED in the model by its id.
- *
- * A LED's id is an opaque identifier chosen by the driver, not its position in the model: drivers are free to
- * derive it from device-specific numbering (the Rift uses the headset's own LED indices, which include a slot for
- * the IMU). So a blob's matched_device_led_id has to be resolved through here rather than used as an index.
- *
- * @return The index of the LED in the model, or -1 when no LED carries that id.
- */
-static int32_t
-findLedIndexById(const t_constellation_tracker_led_model *leds_model, t_constellation_led_id_it led_id)
-{
-	for (size_t i = 0; i < leds_model->led_count; i++) {
-		if (leds_model->leds[i].id == led_id) {
-			return static_cast<int32_t>(i);
-		}
-	}
-
-	return -1;
-}
 
 uint32_t
 pickLabelledBlobs(t_blob *blobs,
@@ -380,21 +186,6 @@ pickLabelledBlobs(t_blob *blobs,
 }
 
 void
-conditionPoints(const t_camera_model_params &params, std::vector<Eigen::Vector2f> &points2d)
-{
-	// Undistort the points before passing them to the optimizer.
-	if constexpr (kOptimizeUndistortedPoints) {
-		// undistort all 2d points
-		for (size_t i = 0; i < points2d.size(); i++) {
-			Eigen::Vector2f &p = points2d[i];
-			float x_undistorted = 0.0f, y_undistorted = 0.0f;
-			undistort<float>(params, p.x(), p.y(), x_undistorted, y_undistorted);
-			p = Eigen::Vector2f(x_undistorted, y_undistorted);
-		}
-	}
-}
-
-void
 setupProblem(Eigen::Vector<double, kPoseStateSize> &solver_params,
              PoseManifold &pose_manifold,
              CostFunction &cost_function,
@@ -422,36 +213,25 @@ setupProblem(Eigen::Vector<double, kPoseStateSize> &solver_params,
 	out_problem = std::move(problem);
 }
 
-//! Blob centroids are never localized better than this, in pixels.
-constexpr double kMinResidualSigmaPixels = 0.5;
-
 bool
 computeCovariance(uint32_t num_residuals,
                   double rss,
                   const PoseStateCovarianceMatrix &H,
-                  Eigen::Ref<PoseStateCovarianceMatrix> out_covariance,
-                  Eigen::Ref<PoseStateCovarianceMatrix> out_whitening)
+                  Eigen::Ref<PoseStateCovarianceMatrix> out_covariance)
 {
 	assert(num_residuals > kPoseCovarianceSize);
 
 	const double sigma2 = rss / static_cast<double>(num_residuals - kPoseCovarianceSize);
-	const double sigma = std::max(std::sqrt(sigma2), kMinResidualSigmaPixels);
+	const double sigma = std::max(std::sqrt(sigma2), kBlobPositionSigmaPixels);
 
 	Eigen::LLT<PoseStateCovarianceMatrix> llt(H);
 	if (llt.info() != Eigen::Success) {
 		return false;
 	}
 
-	// H = L L^T, so sigma * L^-T is a square root of the covariance and its inverse, L^T / sigma, is the
-	// whitener: the square root of the information matrix.
-	const PoseStateCovarianceMatrix L = llt.matrixL();
-	out_whitening = L.transpose() / sigma;
-
 	out_covariance = (sigma * sigma) * llt.solve(PoseStateCovarianceMatrix::Identity());
 
-	assert((out_whitening.transpose() * out_whitening * out_covariance).isIdentity(1e-6));
-
-	if (!out_whitening.allFinite() || !out_covariance.allFinite()) {
+	if (!out_covariance.allFinite()) {
 		return false;
 	}
 
@@ -502,8 +282,7 @@ optimizePose(u_logging_level log_level,
              t_constellation_tracker_led_model *leds_model,
              t_constellation_device_id_t device_id,
              xrt_pose &out_pose,
-             RawPoseCovarianceMatrix out_covariance,
-             RawPoseCovarianceMatrix out_whitening)
+             RawPoseCovarianceMatrix out_covariance)
 {
 	std::vector<Eigen::Vector2f> points2d;
 	std::vector<Eigen::Vector3f> points3d;
@@ -583,20 +362,17 @@ optimizePose(u_logging_level log_level,
 	// Assert that RANSAC hasn't put us below 4 LEDs
 	assert(num_leds >= 4);
 
-	conditionPoints(params, points2d);
+	conditionLedPoints(params, points2d);
 
-	PnPOptimizeCostFunctor optimize_cost_functor = {
-	    .num_leds = num_leds,
-	    .blob_positions = points2d,
-	    .T_model_leds = points3d,
-	    .params = params,
-	};
+	auto optimize_cost_functor = PnPOptimizeCostFunctor(num_leds, points2d, points3d, params);
 
-	Eigen::Vector<double, kPoseStateSize> solver_params = Pose<double>(init_pose).pack();
+	// Initialize our solver with the pose
+	Eigen::Vector<double, kPoseStateSize> solver_params;
+	Pose<double>(init_pose).pack(solver_params);
 
 	CostFunction cost_function = {
 	    &optimize_cost_functor,
-	    static_cast<int>(num_leds * 2),
+	    optimize_cost_functor.numResiduals(),
 	    ceres::DO_NOT_TAKE_OWNERSHIP,
 	};
 	PoseManifold pose_manifold;
@@ -629,7 +405,8 @@ optimizePose(u_logging_level log_level,
 		return false;
 	}
 
-	out_pose = Pose<double>::unpackToPose(solver_params);
+	// Unpack the parameters
+	out_pose = Pose<double>(solver_params).toXrtPose();
 
 	if (out_covariance != nullptr) {
 		uint32_t num_residuals;
@@ -637,11 +414,9 @@ optimizePose(u_logging_level log_level,
 		PoseStateCovarianceMatrix H;
 
 		Eigen::Map<PoseStateCovarianceMatrix> covariance(out_covariance);
-		Eigen::Map<PoseStateCovarianceMatrix> whitening(out_whitening);
-		if (!computeProblemHessian(problem, num_residuals, rss, H) ||           //
-		    !computeCovariance(num_residuals, rss, H, covariance, whitening)) { //
+		if (!computeProblemHessian(problem, num_residuals, rss, H) || //
+		    !computeCovariance(num_residuals, rss, H, covariance)) {  //
 			covariance = BAD_COVARIANCE_MATRIX;
-			whitening = BAD_WHITENING_MATRIX;
 		}
 	}
 
@@ -656,11 +431,9 @@ computePoseCovariance(u_logging_level log_level,
                       uint32_t num_blobs,
                       t_constellation_tracker_led_model *leds_model,
                       t_constellation_device_id_t device_id,
-                      RawPoseCovarianceMatrix out_covariance,
-                      RawPoseCovarianceMatrix out_whitening)
+                      RawPoseCovarianceMatrix out_covariance)
 {
 	Eigen::Map<PoseStateCovarianceMatrix> covariance(out_covariance);
-	Eigen::Map<PoseStateCovarianceMatrix> whitening(out_whitening);
 
 	std::vector<Eigen::Vector2f> points2d;
 	std::vector<Eigen::Vector3f> points3d;
@@ -682,24 +455,19 @@ computePoseCovariance(u_logging_level log_level,
 	// can't compute a covariance matrix, so we return a bad covariance matrix.
 	if (num_leds < 4) {
 		covariance = BAD_COVARIANCE_MATRIX;
-		whitening = BAD_WHITENING_MATRIX;
 		return;
 	}
 
-	conditionPoints(params, points2d);
+	conditionLedPoints(params, points2d);
 
-	PnPOptimizeCostFunctor optimize_cost_functor = {
-	    .num_leds = num_leds,
-	    .blob_positions = points2d,
-	    .T_model_leds = points3d,
-	    .params = params,
-	};
+	auto optimize_cost_functor = PnPOptimizeCostFunctor(num_leds, points2d, points3d, params);
 
-	Eigen::Vector<double, kPoseStateSize> solver_params = Pose<double>(init_pose).pack();
+	Eigen::Vector<double, kPoseStateSize> solver_params;
+	Pose<double>(init_pose).pack(solver_params);
 
 	CostFunction cost_function = {
 	    &optimize_cost_functor,
-	    static_cast<int>(num_leds * 2),
+	    optimize_cost_functor.numResiduals(),
 	    ceres::DO_NOT_TAKE_OWNERSHIP,
 	};
 	PoseManifold pose_manifold;
@@ -712,10 +480,9 @@ computePoseCovariance(u_logging_level log_level,
 	double rss;
 	PoseStateCovarianceMatrix H;
 
-	if (!computeProblemHessian(problem, num_residuals, rss, H) ||           //
-	    !computeCovariance(num_residuals, rss, H, covariance, whitening)) { //
+	if (!computeProblemHessian(problem, num_residuals, rss, H) || //
+	    !computeCovariance(num_residuals, rss, H, covariance)) {  //
 		covariance = BAD_COVARIANCE_MATRIX;
-		whitening = BAD_WHITENING_MATRIX;
 	}
 }
 

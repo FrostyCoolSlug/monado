@@ -13,7 +13,6 @@
 #include "math/m_api.h"
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <format>
 
@@ -24,52 +23,11 @@ using namespace xrt::tracking::constellation;
 // Anonymous namespace for internal functions.
 namespace {
 
-constexpr float kAxisLength = 0.03f;
-constexpr float kBlobRadiusPixels = 3.0f;
-
 /*
  *
  * Helper functions
  *
  */
-
-rerun::components::Translation3D
-toRerunTranslation(const xrt_vec3 &position)
-{
-	return rerun::components::Translation3D(position.x, position.y, position.z);
-}
-
-rerun::Rotation3D
-toRerunRotation(const xrt_quat &orientation)
-{
-	return rerun::Rotation3D(
-	    rerun::datatypes::Quaternion::from_xyzw(orientation.x, orientation.y, orientation.z, orientation.w));
-}
-
-rerun::Transform3D
-toRerunTransform(const xrt_pose &pose, bool from_parent = true)
-{
-	auto transform = rerun::Transform3D()
-	                     .with_translation(toRerunTranslation(pose.position))
-	                     .with_rotation(toRerunRotation(pose.orientation));
-
-	if (from_parent) {
-		transform = std::move(transform).with_relation(rerun::components::TransformRelation::ParentFromChild);
-	}
-
-	return transform;
-}
-
-rerun::components::Color
-matchedBlobColor(t_constellation_device_id_t device_id, float brightness)
-{
-	// Simple deterministic hash for device ID, ensuring device ID is non-zero
-	uint8_t r = (((device_id + 1) * 37) % 127) + 128;
-	uint8_t g = (((device_id + 1) * 57) % 127) + 128;
-	uint8_t b = (((device_id + 1) * 97) % 127) + 128;
-
-	return rerun::components::Color(r, g, b, static_cast<uint8_t>(255 * brightness));
-}
 
 rerun::components::Color
 unmatchedBlobColor(float brightness)
@@ -81,47 +39,6 @@ unmatchedBlobColor(float brightness)
 	return rerun::components::Color(r, g, b, static_cast<uint8_t>(255 * brightness));
 }
 
-rerun::Pinhole
-makePinhole(const t_camera_calibration &calibration)
-{
-	// Construct the 3x3 intrinsic matrix in column-major order.
-	std::array<float, 9> image_from_camera = {
-	    static_cast<float>(calibration.intrinsics[0][0]),
-	    static_cast<float>(calibration.intrinsics[1][0]),
-	    static_cast<float>(calibration.intrinsics[2][0]),
-	    //
-	    static_cast<float>(calibration.intrinsics[0][1]),
-	    static_cast<float>(calibration.intrinsics[1][1]),
-	    static_cast<float>(calibration.intrinsics[2][1]),
-	    //
-	    static_cast<float>(calibration.intrinsics[0][2]),
-	    static_cast<float>(calibration.intrinsics[1][2]),
-	    static_cast<float>(calibration.intrinsics[2][2]),
-	};
-
-	return rerun::Pinhole(rerun::components::PinholeProjection(image_from_camera))
-	    .with_resolution(calibration.image_size_pixels.w, calibration.image_size_pixels.h)
-	    .with_image_plane_distance(0.2f);
-}
-
-rerun::Image
-makeImage(const xrt_frame &frame)
-{
-	// We only support L8 format for now
-	assert(frame.format == XRT_FORMAT_L8);
-
-	std::vector<uint8_t> image_data(frame.width * frame.height);
-	// Copy the frame data into the image_data vector, accounting for stride
-	for (uint32_t y = 0; y < frame.height; ++y) {
-		std::memcpy(&image_data[y * frame.width], &frame.data[y * frame.stride], frame.width);
-	}
-
-	// Create a rerun image from the xrt_frame data.
-	return rerun::Image(
-	    rerun::archetypes::Image::from_grayscale8(std::move(image_data), {frame.width, frame.height})
-	        .with_opacity(0.5f));
-}
-
 /*
  *
  * Common entity names
@@ -129,24 +46,6 @@ makeImage(const xrt_frame &frame)
  */
 
 static constexpr std::string timeline_name = "keyframes";
-
-std::string
-getCameraEntityName(size_t mosaic_idx, size_t camera_idx)
-{
-	return std::format("cameras/{}/{}", mosaic_idx, camera_idx);
-}
-
-std::string
-getWorldEntityName()
-{
-	return "world";
-}
-
-std::string
-getWorldCameraEntityName(size_t mosaic_idx, size_t camera_idx)
-{
-	return std::format("{}/{}", getWorldEntityName(), getCameraEntityName(mosaic_idx, camera_idx));
-}
 
 std::string
 getCameraImageEntityName(size_t mosaic_idx, size_t camera_idx)
@@ -218,7 +117,7 @@ RerunContext::logLedModel(const std::string &entity_name,
 		const t_constellation_tracker_led &led = led_model.leds[i];
 		positions.emplace_back(led.position.x, led.position.y, led.position.z);
 		radii.emplace_back(led.radius_m);
-		colors.emplace_back(matchedBlobColor(device_id, prior ? 0.1f : 1.0f)); // Full brightness for LED model
+		colors.emplace_back(deviceColor(device_id, prior ? 0.1f : 1.0f)); // Full brightness for LED model
 		labels.emplace_back(std::to_string(led.id));
 	}
 
@@ -254,7 +153,7 @@ RerunContext::logBlobSet(const CameraSample &camera_sample)
 		positions.emplace_back(blob.center.x, blob.center.y);
 		float radius = std::max(std::max(blob.size.x, blob.size.y) * 0.5f, kBlobRadiusPixels);
 		radii.emplace_back(rerun::Radius::ui_points(radius));
-		colors.emplace_back(matched ? matchedBlobColor(blob.matched_device_id, blob.brightness)
+		colors.emplace_back(matched ? deviceColor(blob.matched_device_id, blob.brightness)
 		                            : unmatchedBlobColor(blob.brightness));
 
 		if (matched) {

@@ -948,13 +948,24 @@ pssense_get_constellation_pose(struct pssense_device *pssense,
                                int64_t at_timestamp_ns,
                                struct xrt_space_relation *out_relation)
 {
-	timepoint_ns device_ts;
-	if (!pssense_host_ts_to_device(pssense, at_timestamp_ns, &device_ts)) {
-		(*out_relation) = (struct xrt_space_relation){0};
-		return;
+	(*out_relation) = XRT_C11_COMPOUND(struct xrt_space_relation) XRT_SPACE_RELATION_ZERO;
+
+	if (pssense->tracking.constellation_tracker &&
+	    t_constellation_tracker_get_tracked_pose(pssense->tracking.constellation_tracker,
+	                                             pssense->tracking.constellation_device_id, at_timestamp_ns,
+	                                             out_relation) < 0) {
+		(*out_relation) = XRT_C11_COMPOUND(struct xrt_space_relation) XRT_SPACE_RELATION_ZERO;
 	}
 
-	m_relation_history_get(pssense->tracking.constellation_relation_history, device_ts, out_relation);
+	if (out_relation->relation_flags == 0) {
+		timepoint_ns device_ts;
+		if (!pssense_host_ts_to_device(pssense, at_timestamp_ns, &device_ts)) {
+			(*out_relation) = (struct xrt_space_relation){0};
+			return;
+		}
+
+		m_relation_history_get(pssense->tracking.constellation_relation_history, device_ts, out_relation);
+	}
 }
 
 static void
@@ -1288,6 +1299,11 @@ pssense_push_constellation_tracker_sample(struct t_constellation_tracker_device 
 
 	t_led_sync_push_constellation_sample(&pssense->tracking.led_sync_refinement, sample);
 
+	// Don't do anything else if the sample doesn't have a world pose
+	if (!sample->has_world_pose) {
+		return;
+	}
+
 	os_thread_helper_lock(&pssense->controller_thread);
 	timepoint_ns device_ts;
 	if (!pssense_host_ts_to_device(pssense, sample->timestamp_ns, &device_ts)) {
@@ -1297,7 +1313,7 @@ pssense_push_constellation_tracker_sample(struct t_constellation_tracker_device 
 	os_thread_helper_unlock(&pssense->controller_thread);
 
 	struct xrt_space_relation relation = {
-	    .pose = sample->pose,
+	    .pose = sample->world_pose,
 	    .relation_flags = XRT_SPACE_RELATION_ORIENTATION_VALID_BIT | XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT |
 	                      XRT_SPACE_RELATION_POSITION_VALID_BIT | XRT_SPACE_RELATION_POSITION_TRACKED_BIT,
 	};

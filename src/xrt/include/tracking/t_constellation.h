@@ -20,6 +20,12 @@ typedef int8_t t_constellation_device_id_t;
 typedef int8_t t_constellation_led_id_it;
 
 #define XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME 250
+/*!
+ * The maximum amount of devices the constellation tracker is able to track at once.
+ *
+ * @note This value is dictated by the device bitmask in the sensor fusion, update that there when this is changed to
+ *       another power of two.
+ */
 #define XRT_CONSTELLATION_MAX_DEVICES 4
 
 /*!
@@ -339,8 +345,14 @@ struct t_constellation_tracker_sample
 {
 	//! The time the original blobservation was made.
 	int64_t timestamp_ns;
+	/*!
+	 * Whether the `world_pose` field is valid or not.
+	 *
+	 * In certain cases, cameras are able to observe a device without themselves knowing where they are yet.
+	 */
+	bool has_world_pose;
 	//! The pose of the device at the time of the blobservation.
-	struct xrt_pose pose;
+	struct xrt_pose world_pose;
 	//! The mosaic index of the camera that made the blobservation in question.
 	size_t mosaic_index;
 	//! The index of the camera in the mosaic that made the blobservation in question.
