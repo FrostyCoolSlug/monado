@@ -533,11 +533,8 @@ rift_open_system_impl(struct xrt_builder *xb,
 
 			mosaic->cameras[mosaic->num_cameras++] = (struct t_constellation_tracker_camera){
 			    .calibration = calibration,
-			    // HACK: set concrete pose of "facing Z+" until we have real room calibration
-			    //       (Z+ so that user faces Z-)
-			    .has_concrete_pose = true,
-			    .pose_in_origin = {.position = {.x = 0, .y = 1.0f, .z = 0},
-			                       .orientation = {.x = 0, .y = 1, .z = 0, .w = 0}},
+			    .has_concrete_pose = false,
+			    .pose_in_origin = XRT_POSE_IDENTITY,
 			};
 
 			RIFT_DEBUG(rb, "Rift sensor %u added to constellation tracker at index %zu", i,
