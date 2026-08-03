@@ -135,7 +135,7 @@ void
 pose_metrics_evaluate_pose_with_prior(struct pose_metrics *score,
                                       const struct xrt_pose *pose,
                                       bool prior_must_match,
-                                      struct xrt_pose *pose_prior,
+                                      const struct xrt_pose *pose_prior,
                                       const struct xrt_vec3 *pos_error_thresh,
                                       const struct xrt_vec3 *rot_error_thresh,
                                       struct t_blob *blobs,
