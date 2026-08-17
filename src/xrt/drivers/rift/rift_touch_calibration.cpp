@@ -119,6 +119,26 @@ rift_touch_calibration_parse(const char *calibration_data,
 			led.radius_m = RIFT_LED_SIZE_M;
 			led.id = i;
 		}
+
+		struct xrt_vec3 unit_x = XRT_VEC3_UNIT_X;
+		struct xrt_pose led_to_base = XRT_POSE_IDENTITY;
+
+		// Offset the LEDs relative to the led model origin in order to make our grip pose and aim pose values
+		// work nicely
+		led_to_base.position.x = 0.0f;
+		led_to_base.position.y = -0.049424f;
+		led_to_base.position.z = 0.02826f;
+		math_quat_from_angle_vector(DEG_TO_RAD(-45.0f), &unit_x, &led_to_base.orientation);
+
+		for (size_t i = 0; i < out_calibration->led_model.led_count; i++) {
+			math_vec3_accum(&led_to_base.position, &out_calibration->led_model.leds[i].position);
+			math_quat_rotate_vec3(&led_to_base.orientation, &out_calibration->led_model.leds[i].position,
+			                      &out_calibration->led_model.leds[i].position);
+			math_quat_rotate_vec3(&led_to_base.orientation, &out_calibration->led_model.leds[i].normal,
+			                      &out_calibration->led_model.leds[i].normal);
+			math_vec3_normalize(&out_calibration->led_model.leds[i].normal);
+		}
+
 	} catch (const std::exception &e) {
 		U_LOG_E("Exception while parsing touch controller calibration JSON: %s", e.what());
 		return false;
