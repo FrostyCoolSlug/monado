@@ -35,6 +35,7 @@
 #include <string_view>
 #include <filesystem>
 #include <istream>
+#include <algorithm>
 
 namespace {
 
@@ -400,7 +401,9 @@ Context::wait_for_discover()
 void
 Context::extend_discover()
 {
-	this->discover_end_time = std::chrono::steady_clock::now() + std::chrono::milliseconds(2000);
+	// Only ever push the deadline out - a device showing up must not cut `LH_DISCOVER_WAIT_MS` short.
+	this->discover_end_time =
+	    std::max(this->discover_end_time, std::chrono::steady_clock::now() + std::chrono::milliseconds(2000));
 	this->discover_cv.notify_all();
 }
 
