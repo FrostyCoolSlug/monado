@@ -598,17 +598,6 @@ Camera::processSampleFast(CameraSample &sample)
 		device_state.Txr_world_device_prior =
 		    prior_pose_valid ? std::optional<xrt_pose>(device_predicted_relation.pose) : std::nullopt;
 
-		bool wipe_blob_associations = false;
-		if (this->tryDeviceBlobRecovery(device,       //
-		                                sample,       //
-		                                device_state, //
-		                                Tcv_cam_device_predicted)) {
-			CT_DEBUG(tracker, "Fast processing for device %d succeeded with blob recovery", device->id);
-			continue; // try the next device, we found a pose!
-		} else {
-			wipe_blob_associations = true;
-		}
-
 		// if we have a valid prior pose, try to use it for fast matching
 		if (Tcv_cam_device_predicted.has_value() && //
 		    this->tryDevicePose(device,             //
@@ -618,6 +607,18 @@ Camera::processSampleFast(CameraSample &sample)
 		                        Tcv_cam_device_predicted.value())) {
 			CT_DEBUG(tracker, "Fast processing for device %d succeeded", device->id);
 			continue; // try the next device, we found a pose!
+		}
+
+		// Try to use blobs after we've checked the prior itself
+		bool wipe_blob_associations = false;
+		if (this->tryDeviceBlobRecovery(device,       //
+		                                sample,       //
+		                                device_state, //
+		                                Tcv_cam_device_predicted)) {
+			CT_DEBUG(tracker, "Fast processing for device %d succeeded with blob recovery", device->id);
+			continue; // try the next device, we found a pose!
+		} else {
+			wipe_blob_associations = true;
 		}
 
 		// Try to get a last known pose
