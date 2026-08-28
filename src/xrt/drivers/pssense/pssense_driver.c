@@ -1476,6 +1476,17 @@ pssense_get_output_limits(struct xrt_device *xdev, struct xrt_output_limits *lim
 	return XRT_SUCCESS;
 }
 
+static struct xrt_quat
+quat_from_x_rot(float x)
+{
+	return (struct xrt_quat){
+	    .x = sinf(x * 0.5f),
+	    .y = 0,
+	    .z = 0,
+	    .w = cosf(x * 0.5f),
+	};
+}
+
 static xrt_result_t
 pssense_get_tracked_pose(struct xrt_device *xdev,
                          enum xrt_input_name name,
@@ -1491,6 +1502,48 @@ pssense_get_tracked_pose(struct xrt_device *xdev,
 
 	struct xrt_relation_chain xrc = {0};
 	struct xrt_pose pose_correction = XRT_POSE_IDENTITY;
+
+	float sx = pssense->hand == XRT_HAND_LEFT ? 1.0f : -1.0f;
+	struct xrt_pose T_steamvrroot_model = {
+	    .orientation = quat_from_x_rot(DEG_TO_RAD(-39)),
+	    .position = {.x = -sx * .01432f, .y = .007713f, .z = .10399f},
+	};
+	struct xrt_pose T_steamvrroot_xrgrip = {
+	    .orientation = quat_from_x_rot(DEG_TO_RAD(20.6)),
+	    .position = {.x = sx * .007, .y = -.00182941, .z = .1019482},
+	};
+	struct xrt_pose T_steamvrroot_xraim = {
+	    .orientation = quat_from_x_rot(DEG_TO_RAD(-39.4)),
+	    .position = {.x = sx * .007, .y = -.03894766, .z = .00949694},
+	};
+
+	switch (name) {
+	case XRT_INPUT_PSSENSE_AIM_POSE: {
+		m_relation_chain_push_pose(&xrc, &T_steamvrroot_xraim);
+		break;
+	}
+	case XRT_INPUT_PSSENSE_GRIP_POSE: {
+		m_relation_chain_push_pose(&xrc, &T_steamvrroot_xrgrip);
+		break;
+	}
+	default: assert(!"Unreachable");
+	}
+	m_relation_chain_push_inverted_pose_if_not_identity(&xrc, &T_steamvrroot_model);
+
+#if 0 // Presently unused OpenVR poses, but might be useful if we need to expose more stuff for st/openvr
+	struct xrt_pose T_steamvrroot_xrhandmodel = {
+	    .orientation = quat_from_x_rot(DEG_TO_RAD(39.4)),
+	    .position = {.x = -sx * 11.25, .y = -1.82941, .z = 101.9482},
+	};
+	struct xrt_pose T_steamvrroot_handgrip = {
+	    .orientation = quat_from_x_rot(DEG_TO_RAD(5.037)),
+	    .position = {.x = 0, .y = 3, .z = 97},
+	};
+	struct xrt_pose T_steamvrroot_tip = {
+	    .orientation = quat_from_x_rot(DEG_TO_RAD(37.4)),
+	    .position = {.x = sx * 16.694, .y = -25.22, .z = 24.687},
+	};
+#endif
 
 	// If we aren't using constellation tracking, rotate the IMU orientation so that it's facing the same direction
 	// as the LED model is facing
@@ -1612,12 +1665,7 @@ pssense_create(struct xrt_prober *xp,
 	pssense->hid = hid;
 
 	// Initialize the IMU orientation to be correct
-	struct xrt_quat imu_orientation_quat = {
-	    .x = sinf(pssense_imu_angle * 0.5f),
-	    .y = 0,
-	    .z = 0,
-	    .w = cosf(pssense_imu_angle * 0.5f),
-	};
+	struct xrt_quat imu_orientation_quat = quat_from_x_rot(pssense_imu_angle);
 
 	if (xpdev->product_id == PSSENSE_PID_LEFT) {
 		pssense->base.device_type = XRT_DEVICE_TYPE_LEFT_HAND_CONTROLLER;
