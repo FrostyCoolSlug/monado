@@ -102,8 +102,10 @@ struct DeviceState
 	//! The ID of the device.
 	t_constellation_device_id_t device_id{XRT_CONSTELLATION_INVALID_DEVICE_ID};
 
-	//! The "predicted" pose, which is the pose the device expects itself to be at at the time of the blobservation.
+	//! The predicted pose of the device in the world at the time of the sample.
 	std::optional<xrt_pose> Txr_world_device_prior{std::nullopt};
+	//! The predicted pose of the device relative to the camera at the time of the sample.
+	std::optional<xrt_pose> Tcv_cam_device_predicted{std::nullopt};
 
 	//! The final found pose of the device in this specific sample.
 	std::optional<FoundDevicePose> found_pose{std::nullopt};
@@ -281,14 +283,14 @@ public: // Methods (t_constellation_tracker.cpp)
 
 	//! Fast matching based on prior pose
 	bool
-	tryDevicePose(std::unique_ptr<Device> &device,
+	tryDevicePose(Device *device,
 	              CameraSample &sample,
 	              DeviceState &device_state,
 	              const std::optional<xrt_pose> &Tcv_cam_device_prior,
 	              const xrt_pose &Tcv_cam_device_candidate);
 
 	bool
-	tryDeviceBlobRecovery(std::unique_ptr<Device> &device,
+	tryDeviceBlobRecovery(Device *device,
 	                      CameraSample &sample,
 	                      DeviceState &device_state,
 	                      const std::optional<xrt_pose> &Tcv_cam_device_prior);
@@ -303,7 +305,7 @@ public: // Methods (t_constellation_tracker.cpp)
 	void
 	pushPose(CameraSample &camera_sample,
 	         DeviceState &device_state,
-	         std::unique_ptr<Device> &device,
+	         Device *device,
 	         pose_metrics &score,
 	         const xrt_pose &Tcv_cam_device,
 	         std::optional<OldOptimizationData *> was_optimized);

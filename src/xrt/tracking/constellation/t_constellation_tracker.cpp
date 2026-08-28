@@ -16,6 +16,8 @@
 #include "constellation_tracker_rerun.hpp"
 #endif
 
+#include <algorithm>
+#include <limits>
 #include <string>
 #include <cstring>
 
@@ -61,6 +63,48 @@ num_blobs_for_device(CameraSample &sample, t_constellation_device_id_t device_id
 		}
 	}
 	return out_num_blobs;
+}
+
+/*!
+ * Sort key used to search for the devices closest to the camera first, since a near device covers more of the image and
+ * is the one most likely to explain the blobs. Devices we have no prediction for sort last.
+ *
+ * @note The prediction is stored on the sample, so this is usable from the slow thread as well, where the fast thread's
+ *       predictions are no longer being recomputed.
+ */
+static float
+device_state_camera_distance_sqrd(const DeviceState *device_state)
+{
+	if (device_state == nullptr || !device_state->Tcv_cam_device_predicted.has_value()) {
+		return std::numeric_limits<float>::infinity();
+	}
+
+	return m_vec3_len_sqrd(device_state->Tcv_cam_device_predicted->position);
+}
+
+/*!
+ * Collects the tracker's devices into @p out_devices, ordered nearest-camera-first for @p sample.
+ *
+ * The caller must hold @ref ConstellationTracker::device_lock for as long as it uses the result, since these are
+ * borrowed pointers into @ref ConstellationTracker::devices.
+ */
+static uint32_t
+collect_devices_nearest_first(ConstellationTracker *tracker,
+                              CameraSample &sample,
+                              std::array<Device *, XRT_CONSTELLATION_MAX_DEVICES> &out_devices)
+{
+	uint32_t device_count = 0;
+	for (std::unique_ptr<Device> &device : tracker->devices) {
+		assert(device_count < out_devices.max_size());
+		out_devices[device_count++] = device.get();
+	}
+
+	std::sort(out_devices.data(), out_devices.data() + device_count, [&sample](Device *x, Device *y) {
+		return device_state_camera_distance_sqrd(sample.getDeviceState(x->id).value_or(nullptr)) <
+		       device_state_camera_distance_sqrd(sample.getDeviceState(y->id).value_or(nullptr));
+	});
+
+	return device_count;
 }
 
 /*
@@ -287,7 +331,7 @@ Camera::deferSampleToSlowThread(CameraSample &sample)
 }
 
 bool
-Camera::tryDevicePose(std::unique_ptr<Device> &device,
+Camera::tryDevicePose(Device *device,
                       CameraSample &sample,
                       DeviceState &device_state,
                       const std::optional<xrt_pose> &Tcv_cam_device_prior,
@@ -332,7 +376,7 @@ Camera::tryDevicePose(std::unique_ptr<Device> &device,
 }
 
 bool
-Camera::tryDeviceBlobRecovery(std::unique_ptr<Device> &device,
+Camera::tryDeviceBlobRecovery(Device *device,
                               CameraSample &sample,
                               DeviceState &device_state,
                               const std::optional<xrt_pose> &Tcv_cam_device_prior)
@@ -447,39 +491,46 @@ Camera::processSampleSlow(CameraSample &sample)
 
 	auto Txr_world_cam = sample.Txr_world_cam;
 
-	for (int i = 0; i < 2; i++) {
-		for (std::unique_ptr<Device> &device : tracker->devices) {
+	// Borrowed pointers, only valid while we hold the device lock taken above.
+	std::array<Device *, XRT_CONSTELLATION_MAX_DEVICES> devices{};
+	const uint32_t device_count = collect_devices_nearest_first(tracker, sample, devices);
+
+	for (int pass = 0; pass < 2; pass++) {
+		for (uint32_t device_iter = 0; device_iter < device_count; device_iter++) {
+			Device *device = devices[device_iter];
 			auto search_model = device->search_model;
 
 			// Do a shallow search first go around
 			correspondence_search_flags search_flags =
-			    i == 0 ? CS_FLAG_SHALLOW_SEARCH : CS_FLAG_DEEP_SEARCH;
+			    pass == 0 ? CS_FLAG_SHALLOW_SEARCH : CS_FLAG_DEEP_SEARCH;
 
 			search_flags = (correspondence_search_flags)(search_flags | CS_FLAG_STOP_FOR_STRONG_MATCH);
 
-			auto device_state = sample.getDeviceState(device->id).value_or(nullptr);
+			DeviceState *device_state_ptr = sample.getDeviceState(device->id).value_or(nullptr);
 			// If there was no device state in the sample, that means this device appeared after the
 			// constellation tracker started this sample, so we need to fill out the device state here.
-			if (device_state == nullptr) {
-				device_state = &sample.putDeviceState(device->id);
+			if (device_state_ptr == nullptr) {
+				device_state_ptr = &sample.putDeviceState(device->id);
 
 				// we need to do a slow process for this device since it wasn't present in the fast
 				// processing
-				device_state->needs_slow_processing = true;
+				device_state_ptr->needs_slow_processing = true;
 			}
+			DeviceState &device_state = *device_state_ptr;
 
-			if (!device_state->needs_slow_processing) {
-				continue; // we already did a fast process for this device and it succeeded, no need to
-				          // do a slow one
+			if (!device_state.needs_slow_processing) {
+				// we already did a fast process for this device and it succeeded, so there is no need
+				// to do a slow search
+				continue;
 			}
 
 			xrt_pose Tcv_cam_device = XRT_POSE_IDENTITY;
-			if (device_state->Txr_world_device_prior.has_value() && Txr_world_cam.has_value()) {
+			if (device_state.Txr_world_device_prior.has_value() && Txr_world_cam.has_value()) {
 				xrt_pose Txr_cam_world;
 				math_pose_invert(&Txr_world_cam.value(), &Txr_cam_world);
 
 				xrt_pose Txr_cam_device;
-				math_pose_transform(&Txr_cam_world, &device_state->Txr_world_device_prior.value(),
+				math_pose_transform(&Txr_cam_world, &device_state.Txr_world_device_prior.value(),
 				                    &Txr_cam_device);
 
 				math_pose_convert_from_opencv(&Txr_cam_device, &Tcv_cam_device);
@@ -522,14 +573,14 @@ Camera::processSampleSlow(CameraSample &sample)
 			    &score);                                           //
 			if (found_pose) {
 				this->pushPose(sample,         //
-				               *device_state,  //
+				               device_state,   //
 				               device,         //
 				               score,          //
 				               Tcv_cam_device, //
 				               std::nullopt);  //
 
 				// We found a pose for this device in this sample
-				device_state->needs_slow_processing = false;
+				device_state.needs_slow_processing = false;
 			} else {
 				CT_TRACE(tracker, "Camera %p slow processing for device %d failed to find a pose",
 				         (void *)this, device->id);
@@ -568,8 +619,9 @@ Camera::processSampleFast(CameraSample &sample)
 		math_pose_invert(&Tcv_world_cam.value(), &Tcv_cam_world.value());
 	}
 
-	bool need_slow_search = false;
 	std::shared_lock lock(tracker->device_lock);
+
+	// Figure out where all the devices are first, so we can then sort it.
 	for (std::unique_ptr<Device> &device : tracker->devices) {
 		xrt_space_relation device_predicted_relation = XRT_SPACE_RELATION_ZERO; //< AKA "the prior"
 
@@ -597,6 +649,21 @@ Camera::processSampleFast(CameraSample &sample)
 		auto &device_state = sample.putDeviceState(device->id);
 		device_state.Txr_world_device_prior =
 		    prior_pose_valid ? std::optional<xrt_pose>(device_predicted_relation.pose) : std::nullopt;
+		device_state.Tcv_cam_device_predicted = Tcv_cam_device_predicted;
+	}
+
+	// Borrowed pointers, only valid while we hold the device lock taken above.
+	std::array<Device *, XRT_CONSTELLATION_MAX_DEVICES> devices{};
+	const uint32_t device_count = collect_devices_nearest_first(tracker, sample, devices);
+
+	bool need_slow_search = false;
+	for (uint32_t device_iter = 0; device_iter < device_count; device_iter++) {
+		Device *device = devices[device_iter];
+
+		// The first pass above put a state in the sample for every device we are about to walk.
+		DeviceState &device_state = *sample.getDeviceState(device->id).value();
+
+		const auto Tcv_cam_device_predicted = device_state.Tcv_cam_device_predicted; //< AKA "the prior"
 
 		// if we have a valid prior pose, try to use it for fast matching
 		if (Tcv_cam_device_predicted.has_value() && //
@@ -680,7 +747,7 @@ Camera::processSampleFast(CameraSample &sample)
 void
 Camera::pushPose(CameraSample &camera_sample,
                  DeviceState &device_state,
-                 std::unique_ptr<Device> &device,
+                 Device *device,
                  pose_metrics &score,
                  const xrt_pose &Tcv_cam_device_initial,
                  std::optional<OldOptimizationData *> was_optimized)
