@@ -779,6 +779,7 @@ struct rift_touch_controller
 	struct t_constellation_tracker_device constellation_device;
 	struct t_constellation_tracker_tracking_source constellation_tracking_source;
 	t_constellation_device_id_t constellation_device_id;
+	struct xrt_imu_sink *constellation_imu_sink;
 
 	struct
 	{

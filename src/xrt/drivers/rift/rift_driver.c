@@ -1426,6 +1426,7 @@ rift_add_to_constellation_tracker(struct rift_hmd *hmd, struct t_constellation_t
 		}
 
 		controller->base.tracking_origin = tracking_origin;
+		controller->constellation_imu_sink = controller_params.imu_sink;
 
 		controller->use_constellation = true;
 	}

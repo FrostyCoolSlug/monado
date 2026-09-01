@@ -982,6 +982,12 @@ rift_touch_controller_handle_radio_input_report(struct rift_hmd *hmd,
 	};
 	controller->input.last_imu_sample = imu_sample;
 
+	os_mutex_lock(&controller->constellation_mutex);
+	if (controller->constellation_imu_sink) {
+		xrt_sink_push_imu(controller->constellation_imu_sink, &imu_sample);
+	}
+	os_mutex_unlock(&controller->constellation_mutex);
+
 	struct xrt_vec3 accel_variance = {0.01, 0.01, 0.01};
 	struct xrt_vec3 gyro_variance = {0.01, 0.01, 0.01};
 	imu_fusion_incorporate_gyros_and_accelerometer(controller->input.imu_fusion, imu_sample.timestamp_ns, &gyro,
