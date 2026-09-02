@@ -12,6 +12,7 @@
 #pragma once
 
 #include "xrt/xrt_defines.h"
+
 #include "tracking/t_constellation.h"
 
 #include "camera_model.h"
@@ -54,16 +55,21 @@ enum pose_match_flags
 	//! The LED IDs on the blobs all matched the LEDs we thought (or were unassigned)
 	POSE_MATCH_LED_IDS = 1 << 5,
 	/*!
-	 * Set when too few blobs matched for the reprojection error to say anything about the fit, a P3P solve or
-	 * fewer. Such a solve reproduces its own points by construction, so its error is near zero whether or not the
-	 * pose is right.
+	 * Set when the pose cannot explain the device entirely on it's own. One case is when too few blobs matched for
+	 * the reprojection error to say anything about the fit, a P3P solve or fewer. Such a solve reproduces its own
+	 * points by construction, so its error is near zero whether or not the pose is right.
+	 *
+	 * Another case this may be triggered is when the amount of blobs is too low for the LED model in question to be
+	 * confident about a slow solve. See @ref t_constellation_tracker_led_model_match_parameters.
 	 */
 	POSE_MATCH_DEGENERATE = 1 << 6,
 };
 
-#define POSE_SET_FLAG(score, f) ((score)->match_flags |= (f))
-#define POSE_CLEAR_FLAG(score, f) ((score)->match_flags &= ~(f))
+#define POSE_SET_FLAGS(score, f) ((score)->match_flags |= (f))
+#define POSE_CLEAR_FLAGS(score, f) ((score)->match_flags &= ~(f))
 #define POSE_HAS_FLAGS(score, f) (((score)->match_flags & (f)) == (f))
+
+#define POSE_CLEAR_VALID(score) POSE_CLEAR_FLAGS(score, POSE_MATCH_GOOD | POSE_MATCH_STRONG)
 
 struct pose_metrics
 {

@@ -400,11 +400,11 @@ pose_metrics_evaluate_pose_with_prior(struct pose_metrics *score,
 	score->visible_leds = blob_match_info.num_visible_leds;
 
 	if (blob_match_info.degenerate_solution) {
-		POSE_SET_FLAG(score, POSE_MATCH_DEGENERATE);
+		POSE_SET_FLAGS(score, POSE_MATCH_DEGENERATE);
 	}
 
 	if (blob_match_info.all_led_ids_matched) {
-		POSE_SET_FLAG(score, POSE_MATCH_LED_IDS);
+		POSE_SET_FLAGS(score, POSE_MATCH_LED_IDS);
 	}
 
 	double error_per_led = score->reprojection_error / score->matched_blobs;
@@ -416,6 +416,24 @@ pose_metrics_evaluate_pose_with_prior(struct pose_metrics *score,
 		assert(rot_error_thresh != NULL);
 
 		check_pose_prior(score, pose, pose_prior, pos_error_thresh, rot_error_thresh);
+
+		if (POSE_HAS_FLAGS(score, POSE_MATCH_POSITION | POSE_MATCH_ORIENT)) {
+			if (score->matched_blobs <
+			    led_model->match_parameters.min_leds_for_correspondence_search_with_prior) {
+				// The pose had too few LEDs for a with-prior match.
+				POSE_SET_FLAGS(score, POSE_MATCH_DEGENERATE);
+			} else {
+				// The pose matched the prior, and had enough LEDs for a with-prior match.
+			}
+		} else if (score->matched_blobs <
+		           led_model->match_parameters.min_leds_for_correspondence_search_without_prior) {
+			// The pose had too few LEDs for a without-prior match
+			POSE_SET_FLAGS(score, POSE_MATCH_DEGENERATE);
+		}
+	} else if (blob_match_info.matched_blobs <
+	           led_model->match_parameters.min_leds_for_correspondence_search_without_prior) {
+		// Pose had too few LEDs for a without-prior match
+		POSE_SET_FLAGS(score, POSE_MATCH_DEGENERATE);
 	}
 
 	// Don't add GOOD/STRONG flags if matched fewer than 3 blobs

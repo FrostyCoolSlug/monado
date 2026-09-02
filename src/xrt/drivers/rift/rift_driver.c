@@ -24,7 +24,6 @@
 #include "math/m_relation_history.h"
 #include "math/m_clock_tracking.h"
 #include "math/m_api.h"
-#include "math/m_vec2.h"
 #include "math/m_space.h"
 #include "math/m_vec3.h"
 #include "math/m_mathinclude.h" // IWYU pragma: keep
@@ -452,6 +451,11 @@ rift_read_led_model(struct rift_hmd *hmd)
 		HMD_ERROR(hmd, "Failed to read position calibration report, reason %d", result);
 		return result;
 	}
+
+	hmd->led_model.match_parameters = (struct t_constellation_tracker_led_model_match_parameters){
+	    .min_leds_for_correspondence_search_without_prior = 5,
+	    .min_leds_for_correspondence_search_with_prior = 5,
+	};
 
 	// minus one to get rid of the IMU, which is also in here
 	hmd->led_model.leds = U_TYPED_ARRAY_CALLOC(struct t_constellation_tracker_led, position_report.position_count);

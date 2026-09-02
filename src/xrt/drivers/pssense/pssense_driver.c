@@ -15,7 +15,6 @@
 #include "os/os_time.h"
 
 #include "math/m_api.h"
-#include "math/m_vec3.h"
 
 #include "tracking/t_imu.h"
 #include "tracking/t_constellation.h"
@@ -31,7 +30,6 @@
 #include "util/u_linux.h"
 #include "util/u_resampler.h"
 
-#include "math/m_mathinclude.h"
 #include "math/m_space.h"
 #include "math/m_imu_3dof.h"
 #include "math/m_relation_history.h"
@@ -1656,6 +1654,7 @@ pssense_create(struct xrt_prober *xp,
 		pssense->base.device_type = XRT_DEVICE_TYPE_LEFT_HAND_CONTROLLER;
 		pssense->hand = XRT_HAND_LEFT;
 
+		pssense->led_model.match_parameters = DEFAULT_MATCH_PARAMETERS;
 		pssense->led_model.leds = pssense_left_leds;
 		pssense->led_model.led_count = ARRAY_SIZE(pssense_left_leds);
 
@@ -1667,6 +1666,7 @@ pssense_create(struct xrt_prober *xp,
 		pssense->base.device_type = XRT_DEVICE_TYPE_RIGHT_HAND_CONTROLLER;
 		pssense->hand = XRT_HAND_RIGHT;
 
+		pssense->led_model.match_parameters = DEFAULT_MATCH_PARAMETERS;
 		pssense->led_model.leds = pssense_right_leds;
 		pssense->led_model.led_count = ARRAY_SIZE(pssense_right_leds);
 
