@@ -114,7 +114,7 @@ rift_sensor_thread_tick(struct rift_hmd *hmd)
 	}
 
 	result = os_hid_read(hmd->hmd_dev, buf, sizeof(buf), IMU_SAMPLE_RATE);
-	timepoint_ns recv_time_ns = os_monotonic_get_ns();
+	timepoint_ns recv_time_ns = os_monotonic_get_ns() - RIFT_USB_LATENCY_BIAS;
 
 	if (result < 0) {
 		HMD_ERROR(hmd, "Got error reading from device, assuming fatal, reason %d", result);
@@ -175,7 +175,10 @@ rift_sensor_thread_tick(struct rift_hmd *hmd)
 		hmd->last_remote_sample_time_us = report.sample_timestamp;
 		hmd->last_remote_sample_time_ns += (timepoint_ns)remote_sample_delta_us * OS_NS_PER_USEC;
 
-		m_clock_windowed_skew_tracker_push(hmd->clock_tracker, recv_time_ns, hmd->last_remote_sample_time_ns);
+		m_clock_windowed_skew_tracker_push(   //
+		    hmd->clock_tracker,               //
+		    recv_time_ns,                     //
+		    hmd->last_remote_sample_time_ns); //
 
 		int64_t local_timestamp_ns;
 		// if we haven't synchronized our clocks, just do nothing

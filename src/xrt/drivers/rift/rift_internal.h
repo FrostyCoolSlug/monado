@@ -49,6 +49,8 @@
 #define IMU_SAMPLE_RATE (1000)      // 1000hz
 #define NS_PER_SAMPLE (1000 * 1000) // 1ms (1,000,000 ns) per sample
 #define SERIAL_NUMBER_LENGTH 14
+#define RIFT_USB_LATENCY_BIAS (U_TIME_1US_IN_NS * 200LL) // 200us latency bias over USB
+#define RIFT_RADIO_LATENCY_BIAS (U_TIME_1MS_IN_NS * 4LL) // 4ms bias over radio
 
 #define CALIBRATION_HASH_BYTE_OFFSET 0x1bf0
 #define CALIBRATION_HASH_BYTE_LENGTH 0x10
