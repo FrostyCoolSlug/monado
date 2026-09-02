@@ -10,34 +10,35 @@
 
 #include "xrt/xrt_prober.h"
 
-#include "os/os_threading.h"
 #include "os/os_hid.h"
+#include "os/os_threading.h"
 #include "os/os_time.h"
 
 #include "math/m_api.h"
 
-#include "tracking/t_imu.h"
 #include "tracking/t_constellation.h"
+#include "tracking/t_imu.h"
 
 #include "constellation/t_constellation_tracker.h"
 #include "constellation/t_led_sync_refinement.h"
 
-#include "util/u_var.h"
 #include "util/u_debug.h"
 #include "util/u_device.h"
-#include "util/u_logging.h"
-#include "util/u_trace_marker.h"
 #include "util/u_linux.h"
+#include "util/u_logging.h"
 #include "util/u_resampler.h"
+#include "util/u_time.h"
+#include "util/u_trace_marker.h"
+#include "util/u_var.h"
 
-#include "math/m_space.h"
+#include "math/m_clock_tracking.h"
 #include "math/m_imu_3dof.h"
 #include "math/m_relation_history.h"
-#include "math/m_clock_tracking.h"
+#include "math/m_space.h"
 
 #include "pssense_interface.h"
-#include "pssense_protocol.h"
 #include "pssense_led_model.h"
+#include "pssense_protocol.h"
 
 #include <stdio.h>
 #include <errno.h>
@@ -55,6 +56,7 @@
 #define PSSENSE_ERROR(p, ...) U_LOG_XDEV_IFL_E(&p->base, p->log_level, __VA_ARGS__)
 
 DEBUG_GET_ONCE_LOG_OPTION(pssense_log, "PSSENSE_LOG", U_LOGGING_INFO)
+DEBUG_GET_ONCE_BOOL_OPTION(pssense_pc_polling_rate, "PSSENSE_SET_PC_POLLING_RATE", true)
 
 static struct xrt_binding_input_pair touch_inputs_pssense[] = {
     {XRT_INPUT_TOUCH_X_CLICK, XRT_INPUT_PSSENSE_SQUARE_CLICK},
@@ -506,6 +508,15 @@ pssense_handle_packet(struct pssense_device *pssense,
 	    .timestamp_ns = recv_time_ns,
 	};
 
+#if 0 // IMU rate test
+	static timepoint_ns last[2] = {0};
+	static double rate[2] = {133, 133};
+	rate[pssense->hand] =
+	    (rate[pssense->hand] * 0.999) + ((1 / time_ns_to_s(recv_time_ns - last[pssense->hand])) * 0.001);
+	printf("%d\trate: %lfhz\n", pssense->hand, rate[pssense->hand]);
+	last[pssense->hand] = recv_time_ns;
+#endif
+
 	uint32_t seq_no = __le32_to_cpu(data->seq_no);
 	if (input.seq_no != 0 && seq_no != input.seq_no + 1) {
 		PSSENSE_WARN(pssense, "Missed seq no %u. Previous was %u", seq_no, input.seq_no);
@@ -832,6 +843,30 @@ pssense_send_output_report_locked(struct pssense_device *pssense)
 
 	assert(!"unreachable");
 	return -EINVAL;
+}
+
+//! Sets the controller to use the lower 133hz polling rate
+static bool
+pssense_set_pc_polling_rate(struct pssense_device *pssense)
+{
+	struct pssense_set_polling_rate_feature_report report = {
+	    .report_id = SET_POLLING_RATE_FEATURE_REPORT_ID,
+	    .unk = 0x0E,
+	    .rate_1 = __cpu_to_le16(0x000C),
+	    .rate_2 = __cpu_to_le16(0x0002),
+	};
+
+	uint32_t crc = crc32_le(0, &SET_FEATURE_REPORT_CRC32_SEED, 1);
+	crc = crc32_le(crc, (uint8_t *)&report, sizeof(struct pssense_set_polling_rate_feature_report) - 4);
+	report.crc = __cpu_to_le32(crc);
+
+	int ret = os_hid_set_feature(pssense->hid, (uint8_t *)&report, sizeof report);
+	if (ret < 0) {
+		PSSENSE_ERROR(pssense, "Failed to set PC polling rate, reason %d", ret);
+		return false;
+	}
+
+	return true;
 }
 
 static void *
@@ -1770,6 +1805,12 @@ pssense_create(struct xrt_prober *xp,
 		PSSENSE_ERROR(pssense, "Failed to start thread!");
 		pssense_device_destroy(&pssense->base);
 		return NULL;
+	}
+
+	// Try to set the PC polling rate if the user requested it.
+	if (debug_get_bool_option_pssense_pc_polling_rate() && //
+	    !pssense_set_pc_polling_rate(pssense)) {
+		PSSENSE_ERROR(pssense, "PC polling rate requested, but got error when attempting to apply.");
 	}
 
 	if (!pssense_get_calibration_data(pssense)) {
