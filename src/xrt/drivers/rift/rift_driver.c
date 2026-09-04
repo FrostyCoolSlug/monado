@@ -208,7 +208,7 @@ rift_sensor_thread_tick(struct rift_hmd *hmd)
 			if (have_local_exposure_time) {
 				hmd->exposure_history[hmd->exposure_history_pushed % RIFT_EXPOSURE_HISTORY_SIZE] =
 				    (struct rift_exposure_event){
-				        .sequence = hmd->exposure_counter,
+				        .sequence_id = hmd->exposure_counter,
 				        .timestamp_ns = hmd->last_local_exposure_time_ns,
 				        .recv_timestamp_ns = recv_time_ns,
 				    };
@@ -1477,7 +1477,11 @@ rift_get_radio_id(struct rift_hmd *hmd, uint8_t out_radio_id[5])
 }
 
 bool
-rift_hmd_frame_timestamp_callback(void *user_data, timepoint_ns *timestamp, timepoint_ns frame_start_ns, uint32_t pts)
+rift_hmd_frame_timestamp_callback(void *user_data,             //
+                                  timepoint_ns *out_timestamp, //
+                                  uint64_t *out_sequence_id,   //
+                                  timepoint_ns frame_start_ns, //
+                                  uint32_t pts)                //
 {
 	struct rift_hmd *hmd = (struct rift_hmd *)user_data;
 
@@ -1526,13 +1530,14 @@ rift_hmd_frame_timestamp_callback(void *user_data, timepoint_ns *timestamp, time
 		return false;
 	}
 
-	*timestamp = match.timestamp_ns + interval_ns;
+	*out_timestamp = match.timestamp_ns + interval_ns;
+	*out_sequence_id = match.sequence_id + 1;
 
 	HMD_TRACE(hmd,
-	          "Frame with PTS %u matched exposure %u, taken at %" PRId64 " ns, report %" PRId64
-	          " ns before frame, %" PRId64 " ns from window centre",
-	          pts, match.sequence + 1, *timestamp, frame_start_ns - match.recv_timestamp_ns,
-	          frame_start_ns - match.recv_timestamp_ns - interval_ns);
+	          "Frame with PTS %u matched exposure %u, taken at %" PRId64 " ns (sequence ID %" PRIu64
+	          "), report %" PRId64 " ns before frame, %" PRId64 " ns from window centre",
+	          pts, match.sequence_id + 1, *out_timestamp, *out_sequence_id,
+	          frame_start_ns - match.recv_timestamp_ns, frame_start_ns - match.recv_timestamp_ns - interval_ns);
 
 	return true;
 }

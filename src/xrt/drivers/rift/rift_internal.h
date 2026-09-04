@@ -866,7 +866,7 @@ union rift_radio_command_data {
 struct rift_exposure_event
 {
 	//! The value of rift_hmd::exposure_counter at this exposure.
-	uint32_t sequence;
+	uint32_t sequence_id;
 	//! When the exposure started, in local monotonic time. This is what frames matched to it are timestamped with.
 	timepoint_ns timestamp_ns;
 	/*!
