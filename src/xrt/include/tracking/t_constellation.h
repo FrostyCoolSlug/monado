@@ -100,6 +100,9 @@ struct t_blob_observation
 	 */
 	uint64_t id;
 
+	//! The sequence ID of this mosaic, must be stable across all frames of a mosaic. Monotonically increases.
+	uint64_t sequence_id;
+
 	int64_t timestamp_ns;
 	struct t_blob *blobs;
 	uint32_t num_blobs;
@@ -345,6 +348,8 @@ struct t_constellation_tracker_sample
 {
 	//! The time the original blobservation was made.
 	int64_t timestamp_ns;
+	//! The sequence ID of the mosaic
+	uint64_t sequence_id;
 	/*!
 	 * Whether the `world_pose` field is valid or not.
 	 *

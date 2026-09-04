@@ -213,6 +213,7 @@ CameraSample::CameraSample(t_blob_observation &blobservation, Camera *camera)
 	// Copy the blob observation into this sample, since we need the data to be safe.
 	this->source = blobservation.source;
 	this->id = blobservation.id;
+	this->sequence_id = blobservation.sequence_id;
 	this->timestamp_ns = blobservation.timestamp_ns;
 	memcpy(blobs, blobservation.blobs, sizeof(t_blob) * blobservation.num_blobs);
 	this->blob_count = blobservation.num_blobs;
@@ -1039,6 +1040,7 @@ Camera::pushPose(CameraSample &camera_sample,
 	// Push the sample to the device
 	t_constellation_tracker_sample sample = {
 	    .timestamp_ns = camera_sample.timestamp_ns,
+	    .sequence_id = camera_sample.sequence_id,
 	    .has_world_pose = Txr_world_device.has_value(),
 	    .world_pose = XRT_POSE_IDENTITY,
 	    .mosaic_index = mosaic->index,

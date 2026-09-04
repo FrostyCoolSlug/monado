@@ -121,6 +121,7 @@ struct CameraSample
 public: // Fields
 	t_blobwatch *source{nullptr};
 	uint64_t id{};
+	uint64_t sequence_id;
 	int64_t timestamp_ns{};
 	t_blob blobs[XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME]{};
 	uint32_t blob_count{};
@@ -157,6 +158,7 @@ public: // Methods
 		t_blob_observation obs = {
 		    .source = this->source,
 		    .id = this->id,
+		    .sequence_id = this->sequence_id,
 		    .timestamp_ns = this->timestamp_ns,
 		    .blobs = const_cast<t_blob *>(this->blobs),
 		    .num_blobs = this->blob_count,

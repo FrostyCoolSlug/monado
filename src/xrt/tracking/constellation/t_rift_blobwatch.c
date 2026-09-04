@@ -727,6 +727,7 @@ t_rift_blobwatch_push_frame(struct xrt_frame_sink *sink, struct xrt_frame *frame
 	struct t_blob_observation xbo = {
 	    .source = &bw->base,
 	    .id = (uint64_t)(output - (struct blobservation *)bw->observations),
+	    .sequence_id = frame->source_sequence,
 	    .timestamp_ns = output->timestamp_ns,
 	    .blobs = blobs,
 	    .num_blobs = output->num_blobs,
