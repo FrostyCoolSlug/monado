@@ -63,8 +63,8 @@ struct blob
 	float vx;
 	float vy;
 
-	// The max brightness we see in the blob
-	uint8_t brightness;
+	// The greysum of the blob, over it's whole area
+	uint32_t greysum;
 
 	// bounding box
 	uint16_t top;
@@ -216,7 +216,7 @@ t_rift_blobwatch(struct t_blobwatch *bw)
 	return (struct t_rift_blobwatch *)bw;
 }
 
-static void
+static uint32_t
 compute_greysum(
     struct t_rift_blobwatch *bw, struct xrt_frame *frame, struct extent *e, uint16_t end_y, float *led_x, float *led_y)
 {
@@ -256,7 +256,7 @@ compute_greysum(
 		// Fallback to geometric center to avoid NaN from division by zero
 		*led_x = e->left + (width - 1) / 2.0f;
 		*led_y = e->top + (height - 1) / 2.0f;
-		return;
+		return 0;
 	}
 
 	// @note We don't try to "center" onto the pixel because in OpenCV distortion parameters integer
@@ -267,6 +267,8 @@ compute_greysum(
 	// Subtract 1 to convert from 1-based to 0-based coordinates
 	*led_x = ((float)(greysum_x) / greysum_total - 1);
 	*led_y = ((float)(greysum_y) / greysum_total - 1);
+
+	return greysum_total;
 }
 
 /*
@@ -274,16 +276,14 @@ compute_greysum(
  * array b at the given index.
  */
 static inline void
-store_blob(struct extent *e,
-           uint32_t index,
-           uint16_t end_y,
-           struct blob *b,
-           uint32_t blob_id,
-           float led_x,
-           float led_y,
-           uint8_t brightness)
+store_blob(struct extent *e, //
+           struct blob *b,   //
+           uint16_t end_y,   //
+           uint32_t blob_id, //
+           float led_x,      //
+           float led_y,      //
+           uint32_t greysum) //
 {
-	b += index;
 	b->blob_id = blob_id;
 	b->x = led_x;
 	b->y = led_y;
@@ -299,7 +299,7 @@ store_blob(struct extent *e,
 	b->track_index = -1;
 	b->id_age = 0;
 	b->prev_led_id = b->led_id = LED_INVALID_ID;
-	b->brightness = brightness;
+	b->greysum = greysum;
 }
 
 static void
@@ -329,9 +329,9 @@ extent_to_blobs(
 	while (ob->num_blobs < max_blobs) {
 		float led_x, led_y;
 
-		compute_greysum(bw, frame, e, y, &led_x, &led_y);
+		uint32_t greysum = compute_greysum(bw, frame, e, y, &led_x, &led_y);
 
-		store_blob(e, ob->num_blobs++, y, blobs, bw->next_blob_id++, led_x, led_y, e->max_pixel);
+		store_blob(e, blobs + (ob->num_blobs++), y, bw->next_blob_id++, led_x, led_y, greysum);
 		break;
 	}
 }
@@ -721,7 +721,7 @@ t_rift_blobwatch_push_frame(struct xrt_frame_sink *sink, struct xrt_frame *frame
 		xb->bounding_box.extent.h = b->height;
 		xb->size.x = (float)b->width;
 		xb->size.y = (float)b->height;
-		xb->brightness = b->brightness / 255.0f;
+		xb->brightness = (float)((double)b->greysum / b->area / (255. - bw->params.pixel_threshold));
 	}
 
 	struct t_blob_observation xbo = {

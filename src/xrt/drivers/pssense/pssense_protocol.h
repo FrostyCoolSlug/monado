@@ -22,8 +22,8 @@
 // @todo Remove when clang-format is updated in CI
 // clang-format off
 // IMU ticks are in thirds of a microsecond, so 1 tick = 333.333... nanoseconds
-#define NS_TO_IMU_TICKS(ns) (((uint64_t)(ns) * 3) / 1000)
-#define IMU_TICKS_TO_NS(ticks) (((uint64_t)(ticks) * 1000) / 3)
+#define NS_TO_IMU_TICKS(ns) (((int64_t)(ns) * 3) / 1000)
+#define IMU_TICKS_TO_NS(ticks) (((int64_t)(ticks) * 1000) / 3)
 
 #define PERIOD_ID_TO_DURATION_NS(period_id) (time_duration_ns)(IMU_TICKS_TO_NS(150LLU * (uint64_t)period_id))
 // @note: the +1 is to ensure things round correctly when dealing with converting to and back
@@ -209,8 +209,20 @@ struct pssense_led_settings
 	uint8_t phase;
 	uint8_t sequence_number;
 	uint8_t period_id;
-	//! The position, in IMU ticks, @ref NS_PER_IMU_TICK
-	__le32 cycle_position;
+	union {
+		/*!
+		 * The position when to start the blink, in IMU ticks, @ref NS_TO_IMU_TICKS.
+		 *
+		 * This is used during the PRESCAN phase, @ref pssense_led_sync_phase.
+		 */
+		__le32 cycle_position_absolute;
+		/*!
+		 * An offset from the cycle position start, in IMU ticks, @ref NS_TO_IMU_TICKS.
+		 *
+		 * This is used during the BROAD, BG, and STABLE phases, @ref pssense_led_sync_phase.
+		 */
+		__le32 cycle_position_delta;
+	};
 	//! The length, in thirds of a nanosecond.
 	__le32 cycle_length;
 	uint8_t led_blink[4];
@@ -291,32 +303,31 @@ static_assert(sizeof(struct pssense_feature_report) == FEATURE_REPORT_LENGTH, "I
 
 struct pssense_calibration_data
 {
-	int16_t accel_plus_x;  // 0x00
-	uint8_t _pad0[4];      // 0x02-0x05
-	int16_t accel_minus_x; // 0x06
-	uint8_t _pad1[6];      // 0x08-0x0D
-	int16_t accel_plus_y;  // 0x0E
-	uint8_t _pad2[4];      // 0x10-0x13
-	int16_t accel_minus_y; // 0x14
-	uint8_t _pad3[6];      // 0x16-0x1B
-	int16_t accel_plus_z;  // 0x1C
-	uint8_t _pad4[4];      // 0x1E-0x21
-	int16_t accel_minus_z; // 0x22
-	uint8_t _pad5[6];      // 0x24-0x29
-	int16_t gyro_plus_y;   // 0x2A
-	uint8_t _pad6[4];      // 0x2C-0x2F
-	int16_t gyro_minus_y;  // 0x30
-	uint8_t _pad7[6];      // 0x32-0x37
-	int16_t gyro_plus_z;   // 0x38
-
+	int16_t accel_plus_x;    // 0x00
+	uint8_t _pad0[4];        // 0x02-0x05
+	int16_t accel_minus_x;   // 0x06
+	uint8_t _pad1[6];        // 0x08-0x0D
+	int16_t accel_plus_y;    // 0x0E
+	uint8_t _pad2[4];        // 0x10-0x13
+	int16_t accel_minus_y;   // 0x14
+	uint8_t _pad3[6];        // 0x16-0x1B
+	int16_t accel_plus_z;    // 0x1C
+	uint8_t _pad4[4];        // 0x1E-0x21
+	int16_t accel_minus_z;   // 0x22
+	int16_t gyro_bias_x;     // 0x24
+	int16_t gyro_bias_y;     // 0x26
+	int16_t gyro_bias_z;     // 0x28
+	int16_t gyro_plus_x;     // 0x2A
+	uint8_t _pad6[4];        // 0x2C-0x2F
+	int16_t gyro_minus_x;    // 0x30
+	uint8_t _pad7[6];        // 0x32-0x37
+	int16_t gyro_plus_y;     // 0x38
 	uint8_t _pad8[4];        // 0x3A-0x3D
-	int16_t gyro_minus_z;    // 0x3E
-	int16_t gyro_bias_x;     // 0x40
-	int16_t gyro_bias_y;     // 0x42
-	int16_t gyro_bias_z;     // 0x44
-	int16_t gyro_plus_x;     // 0x46
-	uint8_t _pad9[4];        // 0x48-0x4B
-	int16_t gyro_minus_x;    // 0x4C
+	int16_t gyro_minus_y;    // 0x3E
+	uint8_t _pad9[6];        // 0x40-0x45 (unused by the official driver)
+	int16_t gyro_plus_z;     // 0x46
+	uint8_t _pad10[4];       // 0x48-0x4B
+	int16_t gyro_minus_z;    // 0x4C
 	int16_t gyro_speed_ref1; // 0x4E
 	int16_t gyro_speed_ref2; // 0x50
 	uint8_t _pad_end[34];    // 0x52-0x73

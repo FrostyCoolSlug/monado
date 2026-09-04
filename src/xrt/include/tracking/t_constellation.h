@@ -84,8 +84,7 @@ struct t_blob
 	struct xrt_vec2 size;
 
 	/*!
-	 * The brightness of the brightest pixel of the blob, on a scale from 0.0 (black) to 1.0 (pure white).
-	 * Set to 1.0 for non-brightness-aware blobwatches.
+	 * The brightness of the blob, from 0-1, taken by dividing the greysum over it's area.
 	 */
 	float brightness;
 };
@@ -344,6 +343,16 @@ struct t_constellation_tracker_sample_metrics
 	double reprojection_error;
 };
 
+struct t_constellation_tracker_observed_led
+{
+	//! Whether the LED was observed in this sample.
+	bool observed;
+	//! The observed brightness of the LED, taken by dividing the greysum by the blob's area.
+	float brightness;
+	//! The facing dot product of the LED.
+	float facing_dot;
+};
+
 struct t_constellation_tracker_sample
 {
 	//! The time the original blobservation was made.
@@ -362,10 +371,15 @@ struct t_constellation_tracker_sample
 	size_t mosaic_index;
 	//! The index of the camera in the mosaic that made the blobservation in question.
 	size_t camera_index;
-	//! Average brightness of the detected blobs, from 0 (black) to 1 (pure white).
+	/*!
+	 * Average brightness of the detected blobs, from 0 (black) to 1 (pure white).
+	 * This is the averaged greysum of all LEDs.
+	 */
 	float average_brightness;
 	//! Metrics about the sample, such as reprojection error and matched LED count.
 	struct t_constellation_tracker_sample_metrics metrics;
+	//! The LEDs that were observed in this solve.
+	struct t_constellation_tracker_observed_led leds[XRT_CONSTELLATION_MAX_LEDS_PER_DEVICE];
 };
 
 /*!

@@ -7,6 +7,7 @@
  * @ingroup tracking
  */
 
+#include "math/m_vec3.h"
 #include "xrt/xrt_config_build.h"
 #include "xrt/xrt_defines.h"
 
@@ -951,6 +952,7 @@ Camera::pushPose(CameraSample &camera_sample,
 		                            device->id,                //
 		                            Tcv_cam_device_optimized,  //
 		                            covariance);               //
+
 		if (!success) {
 			CT_DEBUG(tracker,
 			         "Camera %d (group %d) RANSAC-PnP refinement for device %d from %u "
@@ -979,6 +981,13 @@ Camera::pushPose(CameraSample &camera_sample,
 			         Tcv_cam_device.position.z);
 
 			Tcv_cam_device = Tcv_cam_device_optimized;
+
+			// Now that we've optimized the pose, we gotta update the match info
+			pose_metrics_match_pose_to_blobs(&Tcv_cam_device_initial, camera_sample.blobs,
+			                                 camera_sample.blob_count, &device->params.led_model,
+			                                 device->id, &this->model, &blob_match_info);
+			// Unmark any other blobs
+			camera_sample.markMatchingBlobs(tracker, device->params.led_model, device->id, blob_match_info);
 		}
 
 		// We need to re-evaluate the pose after optimization, since the reprojection error may have changed.
@@ -1008,11 +1017,8 @@ Camera::pushPose(CameraSample &camera_sample,
 			used_blobs++;
 		}
 	}
-
 	if (used_blobs > 0) {
 		average_brightness /= used_blobs;
-	} else {
-		average_brightness = 1.0f;
 	}
 
 	// Mark that we found a pose
@@ -1045,12 +1051,35 @@ Camera::pushPose(CameraSample &camera_sample,
 	    .world_pose = XRT_POSE_IDENTITY,
 	    .mosaic_index = mosaic->index,
 	    .camera_index = this->index,
-	    .average_brightness = average_brightness, // @todo compute this
+	    .average_brightness = average_brightness,
 	    .metrics = metrics,
+	    .leds = {},
 	};
 	if (Txr_world_device.has_value()) {
 		sample.world_pose = Txr_world_device.value();
 	}
+
+	for (int i = 0; i < blob_match_info.num_visible_leds; i++) {
+		const auto &visible_led = blob_match_info.visible_leds[i];
+
+		// Skip visible LEDs that have no matched blob
+		if (visible_led.matched_blob == nullptr) {
+			continue;
+		}
+
+		// Assert the IDs are valid indices into the array.
+		assert(visible_led.led->id >= 0);
+		assert((size_t)visible_led.led->id < ARRAY_SIZE(sample.leds));
+
+		// Mark the LED as observed
+		sample.leds[visible_led.led->id] = {
+		    .observed = true,
+		    .brightness = visible_led.matched_blob->brightness,
+		    .facing_dot = static_cast<float>(visible_led.facing_dot),
+		};
+	}
+
+	// Push the sample now that the data is filled out.
 	t_constellation_tracker_device_push_sample(device->device, &sample);
 
 	if (Txr_world_device.has_value()) {
@@ -1349,7 +1378,7 @@ ConstellationTracker::checkSensorCalibration()
 	}
 
 	// 1000 samples per camera ought to be enough
-	if (num_samples < (num_cameras * 1500)) {
+	if (num_samples < (num_cameras * 500)) {
 		return true;
 	}
 

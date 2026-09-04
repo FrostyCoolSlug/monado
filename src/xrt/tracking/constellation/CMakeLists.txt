@@ -18,7 +18,6 @@ add_library(
 	t_constellation_tracker_internal.hpp
 	t_constellation_tracker.cpp
 	t_constellation_tracker.h
-	t_led_sync_refinement.c
 	t_led_sync_refinement.h
 	t_rift_blobwatch.c
 	t_rift_blobwatch.h
@@ -29,6 +28,9 @@ add_library(
 	lambdatwist/quadratic.h
 	lambdatwist/refine_lambda.h
 	lambdatwist/vec.h
+	led_sync/t_led_sync_refinement.c
+	led_sync/pssense_gray_code.h
+	led_sync/led_sync_internal.h
 	optimizer/imu_preintegration.hpp
 	optimizer/internal_math.cpp
 	optimizer/internal_math.hpp
