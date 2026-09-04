@@ -1161,7 +1161,7 @@ pssense_timing_event_sink_push(struct t_timing_event_sink *sink, const struct t_
 
 	struct t_timing_event_camera_exposure_start camera_exposure = event->camera_exposure_start;
 
-	PSSENSE_TRACE(pssense, "Received timing event: %d, seq id: %u, timestamp: %" PRId64 "ns", event->type,
+	PSSENSE_TRACE(pssense, "Received timing event: %d, seq id: %" PRIu64 ", timestamp: %" PRId64 "ns", event->type,
 	              camera_exposure.sequence_id, camera_exposure.timestamp_ns);
 
 	if (pssense->tracking.received_frames++ == 0) {
