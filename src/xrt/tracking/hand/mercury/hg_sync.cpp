@@ -1160,8 +1160,15 @@ t_hand_tracking_sync_mercury_create(struct t_stereo_camera_calibration *calib,
 	u_var_add_f32_timing(hgt, hgt->ft_widget.debug_var, "Frame timing!");
 
 	u_var_add_ro_f32(hgt, &hgt->target_hand_size, "Hand size (Meters between wrist and middle-proximal joint)");
-	// u_var_add_ro_f32(hgt, &hgt->refinement.hand_size_refinement_schedule_x, "Schedule (X value)");
-	// u_var_add_ro_f32(hgt, &hgt->refinement.hand_size_refinement_schedule_y, "Schedule (Y value)");
+
+
+	float *hand_size_refinement_schedule_x = nullptr;
+	float *hand_size_refinement_schedule_y = nullptr;
+	hgt->hand_size_refinement.get_refinement_schedule_ptrs(hand_size_refinement_schedule_x,
+	                                                       hand_size_refinement_schedule_y);
+
+	u_var_add_ro_f32(hgt, hand_size_refinement_schedule_x, "Schedule (X value)");
+	u_var_add_ro_f32(hgt, hand_size_refinement_schedule_y, "Schedule (Y value)");
 
 
 	u_var_add_bool(hgt, &hgt->tuneable_values.new_user_event, "Estimate hand sizes");

@@ -105,6 +105,14 @@ public:
 	void
 	newUserEvent();
 
+	/// Pointers that the debug gui wants
+	void
+	get_refinement_schedule_ptrs(float *&hand_size_refinement_schedule_x, float *&hand_size_refinement_schedule_y)
+	{
+		hand_size_refinement_schedule_x = &this->data.hand_size_refinement_schedule_x;
+		hand_size_refinement_schedule_y = &this->data.hand_size_refinement_schedule_y;
+	}
+
 private:
 	struct HandSizeRefinementData
 	{
