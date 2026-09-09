@@ -259,9 +259,9 @@ public:
 
 	struct model_output_visualizers visualizers;
 
-	u_worker_thread_pool *pool;
+	u_worker_thread_pool *pool = nullptr;
 
-	u_worker_group *group;
+	u_worker_group *group = nullptr;
 
 
 	float baseline = {};
@@ -275,7 +275,7 @@ public:
 
 	enum u_logging_level log_level = U_LOGGING_INFO;
 
-	lm::KinematicHandLM *kinematic_hands[2];
+	lm::KinematicHandLM *kinematic_hands[2] = {nullptr};
 
 	// These are produced by the keypoint estimator and consumed by the nonlinear optimizer
 	// left hand, right hand THEN left view, right view
