@@ -402,7 +402,7 @@ public: // Fields
 	size_t camera_idx;
 
 	//! Intrinsics and distortion, which is what turns a LED in the device's frame into a pixel.
-	t_camera_model_params params;
+	camera_model params;
 };
 
 /*
@@ -446,7 +446,7 @@ struct SnapshotObservation
 	xrt_pose Tcv_world_cam;
 	xrt_pose Tcv_cam_device_seed;
 
-	t_camera_model_params params;
+	camera_model params;
 
 	uint32_t num_points;
 	std::array<xrt_vec2, XRT_CONSTELLATION_MAX_LEDS_PER_DEVICE> points2d;

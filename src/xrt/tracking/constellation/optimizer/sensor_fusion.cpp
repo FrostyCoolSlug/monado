@@ -143,7 +143,12 @@ writeSampleToKeyframe(SensorFusion *fusion,
 					continue;
 				}
 
-				observation.points2d[observation.num_points] = blob.center;
+				if (kOptimizeUndistortedPoints) {
+					observation.points2d[observation.num_points] = blob.center_undistorted;
+				} else {
+					observation.points2d[observation.num_points] = blob.center_distorted;
+				}
+
 				observation.points3d[observation.num_points] = led_model->leds[led_idx].position;
 				observation.num_points += 1;
 			}
@@ -350,7 +355,7 @@ collectImuSamplesForRange(Device &device,
 
 struct StaticCameraObservationCostFunctor
 {
-	t_camera_model_params params;
+	camera_model params;
 	DeviceObservation observation;
 	Eigen::Transform<float, 3, Eigen::Isometry> Tcv_cam_world;
 

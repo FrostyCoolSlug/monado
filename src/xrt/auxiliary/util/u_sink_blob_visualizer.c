@@ -82,10 +82,10 @@ visualize_blobs(struct t_blob_sink *xbs, struct t_blob_observation *tbo)
 		blob.size.x = MAX(blob.size.x, 5.0f); // Ensure size is at least 5 pixels
 		blob.size.y = MAX(blob.size.y, 5.0f);
 
-		int left = (int)(blob.center.x - (blob.size.x / 2));
-		int right = (int)(blob.center.x + (blob.size.x / 2));
-		int top = (int)(blob.center.y - (blob.size.y / 2));
-		int bottom = (int)(blob.center.y + (blob.size.y / 2));
+		int left = (int)(blob.center_distorted.x - (blob.size.x / 2));
+		int right = (int)(blob.center_distorted.x + (blob.size.x / 2));
+		int top = (int)(blob.center_distorted.y - (blob.size.y / 2));
+		int bottom = (int)(blob.center_distorted.y + (blob.size.y / 2));
 
 		// Clamp to frame boundaries
 		left = MAX(0, left);
@@ -103,13 +103,13 @@ visualize_blobs(struct t_blob_sink *xbs, struct t_blob_observation *tbo)
 		}
 
 		// Draw a white dot at the blob's center
-		int center_x = (int)blob.center.x;
-		int center_y = (int)blob.center.y;
+		int center_x = (int)blob.center_distorted.x;
+		int center_y = (int)blob.center_distorted.y;
 		draw_centered_box(frame, center_x, center_y, 3, 255, 255, 255, 255);
 
 		// Draw a red dot for the motion vector
-		int motion_x = (int)(blob.center.x + blob.motion_vector.x);
-		int motion_y = (int)(blob.center.y + blob.motion_vector.y);
+		int motion_x = (int)(blob.center_distorted.x + blob.motion_vector.x);
+		int motion_y = (int)(blob.center_distorted.y + blob.motion_vector.y);
 		draw_centered_box(frame, motion_x, motion_y, 3, 255, 0, 0, 255);
 	}
 

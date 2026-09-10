@@ -33,8 +33,12 @@
 
 namespace xrt::tracking::constellation::optimizer {
 
-//! Optimize directly on the pre-undistorted points, don't compute residuals in distorted pixel space.
-constexpr bool kOptimizeUndistortedPoints = false;
+/*!
+ * Optimize directly on the pre-undistorted points, don't compute residuals in distorted pixel space.
+ *
+ * We don't have a "project" routine for the CV1 distortion algorithm, so we work in undistorted space, instead.
+ */
+constexpr bool kOptimizeUndistortedPoints = true;
 //! Print debug info about the residuals as we're computing them.
 constexpr bool kResidualDebugPrint = false;
 
@@ -505,7 +509,7 @@ constexpr double kBlobPositionSigmaPixels = 0.16;
 
 template <typename T>
 static void
-project_led(const t_camera_model_params &params,
+project_led(const camera_model &params,
             const Eigen::Quaternion<T> &Q_cam_model,
             const Eigen::Vector3<T> &T_cam_model,
             const Eigen::Vector3<T> &T_model_led,
@@ -529,29 +533,21 @@ project_led(const t_camera_model_params &params,
 		return;
 	}
 
-	if constexpr (kOptimizeUndistortedPoints) {
-		// We're optimizing directly on undistorted points, so we don't project the points through the
-		// distortion model. Instead, we just use the normalized camera coordinates.
-		projected_point.x() = T_cam_led.x() / T_cam_led.z();
-		projected_point.y() = T_cam_led.y() / T_cam_led.z();
-	} else {
-		// Project the point into the camera frame, ignore error, since even if the projection fails, it
-		// still always returns *some* value with possibly meaningful derivatives.
-		// (unless in case of memory corruption which no derivative 1e6 is *fine*).
-		(void)camera_models::project(params,               //
-		                             T_cam_led.x(),        //
-		                             T_cam_led.y(),        //
-		                             T_cam_led.z(),        //
-		                             projected_point.x(),  //
-		                             projected_point.y()); //
-	}
+	const t_camera_model_params &dist = kOptimizeUndistortedPoints ? params.calib_pinhole : params.calib_true;
+
+	(void)camera_models::project(dist,                 //
+	                             T_cam_led.x(),        //
+	                             T_cam_led.y(),        //
+	                             T_cam_led.z(),        //
+	                             projected_point.x(),  //
+	                             projected_point.y()); //
 
 	out_projected_point = projected_point;
 }
 
 template <typename T, typename Derived>
 static void
-computeLedResidual(const t_camera_model_params &params,
+computeLedResidual(const camera_model &params,
                    const Eigen::Vector3<T> &T_cam_model,
                    const Eigen::Quaternion<T> &Q_cam_model,
                    const Eigen::Vector2<T> &blob_position_2d,
@@ -607,12 +603,6 @@ computeLedResidual(const t_camera_model_params &params,
 		residual += Eigen::Vector2<T>::Constant(T(1000) * (T(0.001) - T(led_depth)));
 	}
 }
-
-void
-conditionLedPoints(const t_camera_model_params &params, std::vector<Eigen::Vector2f> &points2d);
-
-void
-conditionLedPoints(const t_camera_model_params &params, std::vector<xrt_vec2> &points2d);
 
 
 }; // namespace xrt::tracking::constellation::optimizer

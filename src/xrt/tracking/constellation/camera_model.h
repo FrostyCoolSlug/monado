@@ -22,6 +22,8 @@ struct camera_model
 	//! Frame height
 	int height;
 
-	//! Distortion / projection parameters
-	struct t_camera_model_params calib;
+	//! The true calibration of the camera
+	struct t_camera_model_params calib_true;
+	//! An identity calibration model
+	struct t_camera_model_params calib_pinhole;
 };

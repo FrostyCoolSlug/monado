@@ -219,8 +219,10 @@ DataSerializer::write(const t_blob &value)
 	this->write(value.blob_id);
 	this->write(static_cast<uint8_t>(value.matched_device_id));
 	this->write(static_cast<uint8_t>(value.matched_device_led_id));
-	this->write(value.center.x);
-	this->write(value.center.y);
+	this->write(value.center_distorted.x);
+	this->write(value.center_distorted.y);
+	this->write(value.center_undistorted.x);
+	this->write(value.center_undistorted.y);
 	this->write(value.motion_vector.x);
 	this->write(value.motion_vector.y);
 	this->write(static_cast<uint32_t>(value.bounding_box.offset.w));
@@ -245,8 +247,10 @@ DataSerializer::read(t_blob &value)
 	this->read(matched_device_led_id);
 	value.matched_device_led_id = static_cast<t_constellation_device_id_t>(matched_device_led_id);
 
-	this->read(value.center.x);
-	this->read(value.center.y);
+	this->read(value.center_distorted.x);
+	this->read(value.center_distorted.y);
+	this->read(value.center_undistorted.x);
+	this->read(value.center_undistorted.y);
 	this->read(value.motion_vector.x);
 	this->read(value.motion_vector.y);
 

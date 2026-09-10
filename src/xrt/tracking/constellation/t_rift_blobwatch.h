@@ -49,6 +49,10 @@ struct t_rift_blobwatch_params
 	 * large areas of brightness, such as the sun or a window, from being considered as a single large blob.
 	 */
 	uint16_t max_blob_width;
+	/*!
+	 * The camera calibration of the camera this refers to.
+	 */
+	struct t_camera_calibration camera_calibration;
 };
 
 /*!

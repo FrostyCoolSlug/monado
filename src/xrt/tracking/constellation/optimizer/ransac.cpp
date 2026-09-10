@@ -61,7 +61,7 @@ namespace xrt::tracking::constellation::optimizer {
 
 bool
 ransacPose(bool deterministic,
-           const t_camera_model_params &dist,
+           const camera_model &dist,
            const std::vector<t_blob *> &data_points_2d_f32,
            const std::vector<Eigen::Vector3f> &data_points_3d_f32,
            const std::vector<Eigen::Vector3f> &data_points_3d_normals_f32,
@@ -79,15 +79,15 @@ ransacPose(bool deterministic,
 	// Convert into homogeneous coordinates and undistort the 2D points
 	std::vector<Eigen::Vector3d> data_points_homog_2d_f64(data_points_2d_f32.size());
 	for (size_t i = 0; i < num_data_points; ++i) {
-		float out_x, out_y;
-		t_camera_models_undistort(&dist, data_points_2d_f32[i]->center.x, data_points_2d_f32[i]->center.y,
-		                          &out_x, &out_y);
-		data_points_homog_2d_f64[i] = Eigen::Vector3d(out_x, out_y, 1.0);
+		data_points_homog_2d_f64[i] = map_vec3(data_points_2d_f32[i]->center_homogenized).cast<double>();
 	}
 	std::vector<float> data_points_homog_max_dist_sq(data_points_2d_f32.size());
 	for (size_t i = 0; i < num_data_points; ++i) {
-		Eigen::Vector2f size = {data_points_2d_f32[i]->size.x / dist.fx,  //
-		                        data_points_2d_f32[i]->size.y / dist.fy}; //
+		// @note The size here is technically the size of the blob in *distorted* pixels, but we are using it as
+		// a rough estimate of the size in undistorted pixels. This is not perfect, but it should be good enough
+		// for RANSAC.
+		Eigen::Vector2f size = {data_points_2d_f32[i]->size.x / dist.calib_pinhole.fx,  //
+		                        data_points_2d_f32[i]->size.y / dist.calib_pinhole.fy}; //
 
 		data_points_homog_max_dist_sq[i] = size.squaredNorm();
 	}
@@ -106,7 +106,7 @@ ransacPose(bool deterministic,
 	// Amount of iterations, variable, updated iteratively as the model runs.
 	uint32_t k = max_k;
 	// 3px threshold for inliers on top of the blob size, variable.
-	const float t = 3.0f / std::max(dist.fx, dist.fy);
+	const float t = 3.0f / std::max(dist.calib_pinhole.fx, dist.calib_pinhole.fy);
 	// 4 inliers needed to assert that a model fits well to data, variable, but probably don't change.
 	constexpr uint32_t d = 4;
 

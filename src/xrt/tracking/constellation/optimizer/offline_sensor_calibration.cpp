@@ -105,7 +105,7 @@ struct OptimizerCamera
 	size_t dynamic_parameter_idx;
 
 	//! What the reprojection residuals project through.
-	t_camera_model_params params;
+	camera_model params;
 	//! Where the camera is held for the whole solve, only meaningful when @ref dynamic is false.
 	xrt_pose Tcv_world_cam;
 
@@ -229,7 +229,7 @@ struct CameraObservationLed
  */
 template <typename T>
 void
-computeCameraObservationResiduals(const t_camera_model_params &params,
+computeCameraObservationResiduals(const camera_model &params,
                                   const std::span<const CameraObservationLed> &leds,
                                   const ImuExtrinsics<T> &imu_extrinsics,
                                   const Eigen::Transform<T, 3, Eigen::Isometry> &predicted_T_world_camera,
@@ -270,7 +270,7 @@ computeCameraObservationResiduals(const t_camera_model_params &params,
 //! Camera observation with a fixed-pose camera.
 struct FixedCameraObservationCostFunctor
 {
-	t_camera_model_params params;
+	camera_model params;
 	std::vector<CameraObservationLed> leds;
 	xrt_pose Tcv_world_cam;
 
@@ -305,7 +305,7 @@ typedef ceres::AutoDiffCostFunction<FixedCameraObservationCostFunctor,        //
 //! Camera observation against the camera pinned at the origin with only pitch and roll free.
 struct TwoDofCameraObservationCostFunctor
 {
-	t_camera_model_params params;
+	camera_model params;
 	std::vector<CameraObservationLed> leds;
 
 	template <typename T>
@@ -345,7 +345,7 @@ typedef ceres::AutoDiffCostFunction<TwoDofCameraObservationCostFunctor,       //
 //! Camera observation against a camera whose full pose is being solved for.
 struct DynamicCameraObservationCostFunctor
 {
-	t_camera_model_params params;
+	camera_model params;
 	std::vector<CameraObservationLed> leds;
 
 	template <typename T>
@@ -1268,7 +1268,12 @@ OfflineSensorCalibration::pushCameraSample(ConstellationTracker *tracker, const 
 					continue;
 				}
 
-				points2d.emplace_back(blob.center);
+				if constexpr (kOptimizeUndistortedPoints) {
+					points2d.emplace_back(blob.center_undistorted);
+				} else {
+					points2d.emplace_back(blob.center_distorted);
+				}
+
 				points3d.emplace_back(device->search_model->led_model->leds[index].position);
 			}
 		}
@@ -1584,8 +1589,6 @@ OfflineSensorCalibration::solveWithCameraTimeOffset(t_constellation_device_id_t 
 		camera_sample.timestamp_ns += camera_time_offset_ns;
 	}
 
-	// Whatever the projection model wants the blob positions in, which with the current settings is the
-	// distorted pixels they were measured in.
 	for (auto &camera_sample : camera_samples) {
 		const auto camera_it =
 		    std::find_if(cameras.begin(), cameras.end(), [&](const CameraDescription &camera) {
@@ -1597,8 +1600,6 @@ OfflineSensorCalibration::solveWithCameraTimeOffset(t_constellation_device_id_t 
 			         camera_sample.mosaic_idx, camera_sample.camera_idx);
 			return false;
 		}
-
-		conditionLedPoints(camera_it->params, camera_sample.points2d);
 	}
 
 	/*

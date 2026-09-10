@@ -15,12 +15,14 @@
 #include <Eigen/Core>
 #include <Eigen/Geometry>
 
+#include "constellation/camera_model.h"
+
 
 namespace xrt::tracking::constellation::optimizer {
 
 bool
 ransacPose(bool deterministic,
-           const t_camera_model_params &dist,
+           const camera_model &dist,
            const std::vector<t_blob *> &data_points_2d_f32,
            const std::vector<Eigen::Vector3f> &data_points_3d_f32,
            const std::vector<Eigen::Vector3f> &data_points_3d_normals_f32,

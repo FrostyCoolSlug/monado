@@ -575,7 +575,10 @@ rift_open_system_impl(struct xrt_builder *xb,
 			    .blob_required_threshold = RIFT_BLOBWATCH_BLOB_REQUIRED_THRESHOLD,
 			    .max_match_dist = RIFT_BLOBWATCH_DEFAULT_MAX_MATCH_DIST,
 			    .max_blob_width = RIFT_BLOBWATCH_DEFAULT_MAX_BLOB_WIDTH,
+			    .camera_calibration = {0},
 			};
+			rift_sensor_get_calibration(sensor, &params.camera_calibration);
+
 			ret = t_rift_blobwatch_create(&params, xfctx, blob_sink, &frame_sink, blobwatch);
 			if (ret != 0) {
 				RIFT_WARN(rb, "Failed to create Rift blobwatch for sensor %u with code %d", i, ret);

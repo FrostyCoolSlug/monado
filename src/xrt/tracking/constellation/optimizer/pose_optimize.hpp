@@ -80,7 +80,7 @@ typedef double RawPoseCovarianceMatrix[kPoseCovarianceSize * kPoseCovarianceSize
 bool
 optimizePose(u_logging_level log_level,
              bool deterministic,
-             const t_camera_model_params &params,
+             const camera_model &params,
              xrt_pose init_pose,
              t_blob *blobs,
              uint32_t num_blobs,
@@ -105,7 +105,7 @@ optimizePose(u_logging_level log_level,
  */
 void
 computePoseCovariance(u_logging_level log_level,
-                      const t_camera_model_params &params,
+                      const camera_model &params,
                       xrt_pose init_pose,
                       t_blob *blobs,
                       uint32_t num_blobs,

@@ -268,12 +268,12 @@ CameraSample::markMatchingBlobs(ConstellationTracker *ct,
 			b->matched_device_id = device_id;
 
 			CT_DEBUG(ct, "Marking LED %d/%d at %f,%f angle %f now %d (was %d)", device_id, led->id,
-			         b->center.x, b->center.y, RAD_TO_DEG(acosf(led_info.facing_dot)),
+			         b->center_distorted.x, b->center_distorted.y, RAD_TO_DEG(acosf(led_info.facing_dot)),
 			         b->matched_device_led_id, /* b->prev_led_id */ -1);
 		} else {
 			CT_DEBUG(ct, "No blob for device %d LED %d @ %f,%f size %f px angle %f", device_id, led->id,
-			         led_info.pos_px.x, led_info.pos_px.y, 2 * led_info.led_radius_px,
-			         RAD_TO_DEG(acosf(led_info.facing_dot)));
+			         led_info.pos_px_undistorted.x, led_info.pos_px_undistorted.y,
+			         2 * led_info.led_radius_px_undistorted, RAD_TO_DEG(acosf(led_info.facing_dot)));
 		}
 	}
 }
@@ -297,9 +297,12 @@ Camera::Camera(ConstellationTracker *tracker,
 	this->model = {
 	    .width = calibration.image_size_pixels.w,
 	    .height = calibration.image_size_pixels.h,
-	    .calib = {},
+	    .calib_true = {},
+	    .calib_pinhole = {},
 	};
-	t_camera_model_params_from_t_camera_calibration(&this->calibration, &this->model.calib);
+	t_camera_model_params_from_t_camera_calibration(&this->calibration, &this->model.calib_true);
+	this->model.calib_pinhole = this->model.calib_true;
+	this->model.calib_pinhole.model = T_DISTORTION_PINHOLE;
 
 	this->locked_data = {
 	    .Txr_origin_cam = camera_params.pose_in_origin,
@@ -488,7 +491,7 @@ Camera::tryDeviceBlobRecovery(Device *device,
 	xrt_pose Tcv_cam_device_optimized;
 	bool success = optimizePose(tracker->log_level,                //
 	                            tracker->deterministic,            //
-	                            this->model.calib,                 //
+	                            this->model,                       //
 	                            Tcv_cam_device,                    //
 	                            sample.blobs,                      //
 	                            sample.blob_count,                 //
@@ -944,7 +947,7 @@ Camera::pushPose(CameraSample &camera_sample,
 		xrt_pose Tcv_cam_device_optimized;
 		bool success = optimizePose(tracker->log_level,        //
 		                            tracker->deterministic,    //
-		                            this->model.calib,         //
+		                            this->model,               //
 		                            Tcv_cam_device,            //
 		                            camera_sample.blobs,       //
 		                            camera_sample.blob_count,  //
@@ -963,7 +966,7 @@ Camera::pushPose(CameraSample &camera_sample,
 				// If we didn't do a pose optimization, and this one failed, just compute the covariance
 				// directly.
 				computePoseCovariance(tracker->log_level,        //
-				                      this->model.calib,         //
+				                      this->model,               //
 				                      Tcv_cam_device,            //
 				                      camera_sample.blobs,       //
 				                      camera_sample.blob_count,  //
@@ -1295,7 +1298,7 @@ ConstellationTracker::ConstellationTracker(t_constellation_tracker_params *param
 			this->offline_sensor_calibration->addCamera({
 			    .mosaic_idx = mosaic->index,
 			    .camera_idx = camera->index,
-			    .params = camera->model.calib,
+			    .params = camera->model,
 			    .Tcv_world_cam = Tcv_origin_cam,
 			    .has_concrete_pose = camera->locked_data.has_concrete_pose,
 			});
@@ -1304,7 +1307,7 @@ ConstellationTracker::ConstellationTracker(t_constellation_tracker_params *param
 			this->sensor_fusion->addCamera({
 			    .mosaic_idx = mosaic->index,
 			    .camera_idx = camera->index,
-			    .params = camera->model.calib,
+			    .params = camera->model,
 			});
 		}
 	}
@@ -1378,7 +1381,7 @@ ConstellationTracker::checkSensorCalibration()
 	}
 
 	// 1000 samples per camera ought to be enough
-	if (num_samples < (num_cameras * 500)) {
+	if (num_samples < (num_cameras * 1500)) {
 		return true;
 	}
 

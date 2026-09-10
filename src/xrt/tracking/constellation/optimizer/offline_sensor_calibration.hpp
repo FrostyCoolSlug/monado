@@ -88,7 +88,7 @@ public: // Fields
 	size_t camera_idx;
 
 	//! Intrinsics and distortion, which is what turns a LED in the device's frame into a pixel.
-	t_camera_model_params params;
+	camera_model params;
 
 	//! Where the camera sits in the world, in OpenCV space. Only read when @ref has_concrete_pose is set.
 	xrt_pose Tcv_world_cam;
@@ -125,7 +125,7 @@ public: // Fields
 	xrt_pose Tcv_world_cam;
 
 	//! Carried through from the description, so a consumer can reproject the observations this pose was fit to.
-	t_camera_model_params params;
+	camera_model params;
 
 	//! False when the pose was handed to the optimizer as a constraint instead of being solved for.
 	bool optimized;

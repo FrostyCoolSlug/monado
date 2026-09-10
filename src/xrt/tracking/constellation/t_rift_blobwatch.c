@@ -24,6 +24,7 @@
 #include "os/os_threading.h"
 
 #include "tracking/t_constellation.h"
+#include "tracking/t_camera_models.h"
 
 #include "math/m_api.h"
 
@@ -183,6 +184,7 @@ struct t_rift_blobwatch
 
 	uint32_t next_blob_id;
 	struct t_rift_blobwatch_params params;
+	struct t_camera_model_params camera_model_params;
 
 	/*!
 	 * Cached square of the maximum distance for matching a blob between frames,
@@ -708,11 +710,26 @@ t_rift_blobwatch_push_frame(struct xrt_frame_sink *sink, struct xrt_frame *frame
 		struct blob *b = output->blobs + i;
 		struct t_blob *xb = blobs + i;
 
+		// Undistort the blob centre, then map it back through the pinhole intrinsics so that
+		// center_undistorted is in *undistorted pixel coordinates* (i.e. what an ideal pinhole
+		// camera with the same fx/fy/cx/cy would have measured), not normalized ray tangents.
+		float nx, ny;
+		t_camera_models_undistort(&bw->camera_model_params, //
+		                          b->x,                     //
+		                          b->y,                     //
+		                          &nx,                      //
+		                          &ny);                     //
+
 		xb->blob_id = b->blob_id;
 		xb->matched_device_id = LED_OBJECT_ID(b->led_id);
 		xb->matched_device_led_id = LED_LOCAL_ID(b->led_id);
-		xb->center.x = b->x;
-		xb->center.y = b->y;
+		xb->center_distorted.x = b->x;
+		xb->center_distorted.y = b->y;
+		xb->center_undistorted.x = nx * bw->camera_model_params.fx + bw->camera_model_params.cx;
+		xb->center_undistorted.y = ny * bw->camera_model_params.fy + bw->camera_model_params.cy;
+		xb->center_homogenized.x = nx;
+		xb->center_homogenized.y = ny;
+		xb->center_homogenized.z = 1.0f;
 		xb->motion_vector.x = b->vx;
 		xb->motion_vector.y = b->vy;
 		xb->bounding_box.offset.w = b->left;
@@ -864,6 +881,9 @@ t_rift_blobwatch_create(const struct t_rift_blobwatch_params *params,
 		free(bw);
 		return -1;
 	}
+
+	// Convert the camera parameters
+	t_camera_model_params_from_t_camera_calibration(&params->camera_calibration, &bw->camera_model_params);
 
 	bw->next_blob_id = 1;
 

@@ -90,10 +90,10 @@ struct pose_metrics
 struct pose_metrics_visible_led_info
 {
 	struct t_constellation_tracker_led *led;
-	double led_radius_px;   //< Expected max size of the LED in pixels at that distance
-	struct xrt_vec2 pos_px; //< Projected position of the LED (pixels)
-	struct xrt_vec3 pos_m;  //< Projected physical position of the LED (metres)
-	double facing_dot;      //< Dot product between LED and camera
+	double led_radius_px_undistorted;   //< Expected max size of the LED in undistorted pixels at that distance
+	struct xrt_vec2 pos_px_undistorted; //< Projected position of the LED (undistorted pixels)
+	struct xrt_vec3 pos_m;              //< Projected physical position of the LED (metres)
+	double facing_dot;                  //< Dot product between LED and camera
 	struct t_blob *matched_blob;
 };
 

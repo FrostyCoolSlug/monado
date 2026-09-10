@@ -58,13 +58,13 @@ private: // Fields
 	uint32_t num_leds;
 	const std::vector<Eigen::Vector2f> &blob_positions;
 	const std::vector<Eigen::Vector3f> &T_model_leds;
-	const t_camera_model_params &params;
+	const camera_model &params;
 
 public: // Methods
 	PnPOptimizeCostFunctor(uint32_t num_leds,
 	                       const std::vector<Eigen::Vector2f> &blob_positions,
 	                       const std::vector<Eigen::Vector3f> &T_model_leds,
-	                       const t_camera_model_params &params)
+	                       const camera_model &params)
 	    : num_leds(num_leds), blob_positions(blob_positions), T_model_leds(T_model_leds), params(params)
 	{}
 
@@ -170,8 +170,16 @@ pickLabelledBlobs(t_blob *blobs,
 
 		t_constellation_tracker_led &led = leds_model->leds[led_index];
 
+		// Get the center we're using
+		xrt_vec2 center;
+		if constexpr (kOptimizeUndistortedPoints) {
+			center = blobs[i].center_undistorted;
+		} else {
+			center = blobs[i].center_distorted;
+		}
+
 		// We have a valid LED, add it to the optimization.
-		points2d.push_back({blobs[i].center.x, blobs[i].center.y});
+		points2d.push_back({center.x, center.y});
 		points3d.push_back({led.position.x, led.position.y, led.position.z});
 		led_ids.push_back(led.id);
 		normals3d.push_back({led.normal.x, led.normal.y, led.normal.z});
@@ -275,7 +283,7 @@ namespace xrt::tracking::constellation::optimizer {
 bool
 optimizePose(u_logging_level log_level,
              bool deterministic,
-             const t_camera_model_params &params,
+             const camera_model &params,
              xrt_pose init_pose,
              t_blob *blobs,
              uint32_t num_blobs,
@@ -362,8 +370,6 @@ optimizePose(u_logging_level log_level,
 	// Assert that RANSAC hasn't put us below 4 LEDs
 	assert(num_leds >= 4);
 
-	conditionLedPoints(params, points2d);
-
 	auto optimize_cost_functor = PnPOptimizeCostFunctor(num_leds, points2d, points3d, params);
 
 	// Initialize our solver with the pose
@@ -425,7 +431,7 @@ optimizePose(u_logging_level log_level,
 
 void
 computePoseCovariance(u_logging_level log_level,
-                      const t_camera_model_params &params,
+                      const camera_model &params,
                       xrt_pose init_pose,
                       t_blob *blobs,
                       uint32_t num_blobs,
@@ -457,8 +463,6 @@ computePoseCovariance(u_logging_level log_level,
 		covariance = BAD_COVARIANCE_MATRIX;
 		return;
 	}
-
-	conditionLedPoints(params, points2d);
 
 	auto optimize_cost_functor = PnPOptimizeCostFunctor(num_leds, points2d, points3d, params);
 

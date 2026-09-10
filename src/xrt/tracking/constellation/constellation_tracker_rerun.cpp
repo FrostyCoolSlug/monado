@@ -150,7 +150,9 @@ RerunContext::logBlobSet(const CameraSample &camera_sample)
 		const t_blob &blob = camera_sample.blobs[i];
 		bool matched = (blob.matched_device_id != XRT_CONSTELLATION_INVALID_DEVICE_ID);
 
-		positions.emplace_back(blob.center.x, blob.center.y);
+		// Blobs are offset by 0.5px because in OpenCV distortion integers are pixel centers, but they aren't in
+		// Rerun.
+		positions.emplace_back(blob.center_distorted.x + 0.5f, blob.center_distorted.y + 0.5f);
 		float radius = std::max(std::max(blob.size.x, blob.size.y) * 0.5f, kBlobRadiusPixels);
 		radii.emplace_back(rerun::Radius::ui_points(radius));
 		colors.emplace_back(matched ? deviceColor(blob.matched_device_id, blob.brightness)

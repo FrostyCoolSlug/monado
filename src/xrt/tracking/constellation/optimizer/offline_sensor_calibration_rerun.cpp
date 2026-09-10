@@ -14,6 +14,8 @@
 
 #include "tracking/t_camera_models.hpp"
 
+#include "constellation/optimizer/internal_math.hpp"
+
 #include "util/u_logging.h"
 
 #include <algorithm>
@@ -77,9 +79,12 @@ reprojectionErrorPixels(const CameraCalibration &camera,
 			continue;
 		}
 
+		const t_camera_model_params &dist =
+		    kOptimizeUndistortedPoints ? camera.params.calib_pinhole : camera.params.calib_true;
+
 		float projected_x = 0.0f;
 		float projected_y = 0.0f;
-		if (!camera_models::project<float>(camera.params, T_cam_led.x, T_cam_led.y, T_cam_led.z, projected_x,
+		if (!camera_models::project<float>(dist, T_cam_led.x, T_cam_led.y, T_cam_led.z, projected_x,
 		                                   projected_y)) {
 			continue;
 		}

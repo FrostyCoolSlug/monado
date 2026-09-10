@@ -370,33 +370,6 @@ marginalize(
 	out_e0 = -j_pinv_t * b0_s;
 }
 
-void
-conditionLedPoints(const t_camera_model_params &params, std::vector<Eigen::Vector2f> &points2d)
-{
-	// Undistort the points before passing them to the optimizer.
-	if constexpr (kOptimizeUndistortedPoints) {
-		// undistort all 2d points
-		for (size_t i = 0; i < points2d.size(); i++) {
-			Eigen::Vector2f &p = points2d[i];
-			float x_undistorted = 0.0f, y_undistorted = 0.0f;
-			camera_models::undistort<float>(params, p.x(), p.y(), x_undistorted, y_undistorted);
-			p = Eigen::Vector2f(x_undistorted, y_undistorted);
-		}
-	}
-}
-
-void
-conditionLedPoints(const t_camera_model_params &params, std::vector<xrt_vec2> &points2d)
-{
-	if constexpr (kOptimizeUndistortedPoints) {
-		for (xrt_vec2 &p : points2d) {
-			float x_undistorted = 0.0f, y_undistorted = 0.0f;
-			camera_models::undistort<float>(params, p.x, p.y, x_undistorted, y_undistorted);
-			p = xrt_vec2{x_undistorted, y_undistorted};
-		}
-	}
-}
-
 PreintegratedImuSamples
 preintegrate(const std::span<const xrt_imu_sample> &imu_samples,
              const xrt_imu_sample &first_sample_after_end_time,

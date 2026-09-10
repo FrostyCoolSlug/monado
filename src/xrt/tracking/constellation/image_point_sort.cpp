@@ -18,10 +18,14 @@ compare_blobs_distance(struct cs_image_point *anchor, const struct cs_image_poin
 {
 	double dist1, dist2;
 
-	dist1 = (b1->blob->center.y - anchor->blob->center.y) * (b1->blob->center.y - anchor->blob->center.y) +
-	        (b1->blob->center.x - anchor->blob->center.x) * (b1->blob->center.x - anchor->blob->center.x);
-	dist2 = (b2->blob->center.y - anchor->blob->center.y) * (b2->blob->center.y - anchor->blob->center.y) +
-	        (b2->blob->center.x - anchor->blob->center.x) * (b2->blob->center.x - anchor->blob->center.x);
+	dist1 = (b1->blob->center_undistorted.y - anchor->blob->center_undistorted.y) *
+	            (b1->blob->center_undistorted.y - anchor->blob->center_undistorted.y) +
+	        (b1->blob->center_undistorted.x - anchor->blob->center_undistorted.x) *
+	            (b1->blob->center_undistorted.x - anchor->blob->center_undistorted.x);
+	dist2 = (b2->blob->center_undistorted.y - anchor->blob->center_undistorted.y) *
+	            (b2->blob->center_undistorted.y - anchor->blob->center_undistorted.y) +
+	        (b2->blob->center_undistorted.x - anchor->blob->center_undistorted.x) *
+	            (b2->blob->center_undistorted.x - anchor->blob->center_undistorted.x);
 
 	if (dist1 > dist2) {
 		return 1;

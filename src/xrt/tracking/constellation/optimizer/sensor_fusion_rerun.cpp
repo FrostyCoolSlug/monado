@@ -71,10 +71,13 @@ reprojectionErrorPixels(const SnapshotObservation &observation, const xrt_pose &
 			continue;
 		}
 
+		const t_camera_model_params &dist =
+		    kOptimizeUndistortedPoints ? observation.params.calib_pinhole : observation.params.calib_true;
+
 		float projected_x = 0.0f;
 		float projected_y = 0.0f;
-		if (!camera_models::project<float>(observation.params, T_cam_led.x, T_cam_led.y, T_cam_led.z,
-		                                   projected_x, projected_y)) {
+		if (!camera_models::project<float>(dist, T_cam_led.x, T_cam_led.y, T_cam_led.z, projected_x,
+		                                   projected_y)) {
 			continue;
 		}
 

@@ -68,19 +68,25 @@ struct t_blob
 	 */
 	t_constellation_led_id_it matched_device_led_id;
 
-	//! Centre of blob
-	struct xrt_vec2 center;
+	//! Centre of blob, in distorted pixels
+	struct xrt_vec2 center_distorted;
+
+	//! Center of blob, in undistorted pixels
+	struct xrt_vec2 center_undistorted;
+
+	//! Center of blob, in homogenized coordinates
+	struct xrt_vec3 center_homogenized;
 
 	/*!
-	 * Estimated motion vector of blob, in pixels per second. Only valid if the tracking system
+	 * Estimated motion vector of blob, in distorted pixels per second. Only valid if the tracking system
 	 * provides it.
 	 */
 	struct xrt_vec2 motion_vector;
 
-	//! The bounding box of the blob in pixel coordinates.
+	//! The bounding box of the blob in distorted pixel coordinates.
 	struct xrt_rect bounding_box;
 
-	//! The size of the blob, in pixels. May be {0,0}, and may be subpixel accurate.
+	//! The size of the blob, in distorted pixels. May be {0,0}, and may be subpixel accurate.
 	struct xrt_vec2 size;
 
 	/*!
