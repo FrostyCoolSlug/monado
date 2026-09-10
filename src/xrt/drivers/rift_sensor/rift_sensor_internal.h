@@ -8,6 +8,7 @@
  */
 
 #include "xrt/xrt_frame.h"
+#include "xrt/xrt_byte_order.h"
 
 #include "os/os_threading.h"
 
@@ -70,20 +71,31 @@ struct rift_sensor_dk2_calib
 };
 SIZE_ASSERT(struct rift_sensor_dk2_calib, 128);
 
+#define CV1_CALIB_MAGIC 0xBAADF00DDEADD00D
+#define CV1_CALIB_SIZE 160
+
+enum rift_sensor_cv1_lens_type
+{
+	RIFT_SENSOR_CV1_LENS_TYPE_RADTAN = 0x0,
+	RIFT_SENSOR_CV1_LENS_TYPE_KB_LEGACY = 0x1,
+	RIFT_SENSOR_CV1_LENS_TYPE_OLD_BA_REJECTED = 0x2,
+	RIFT_SENSOR_CV1_LENS_TYPE_RADTAN_RECIPROCAL = 0x3,
+	RIFT_SENSOR_CV1_LENS_TYPE_IDENTITY = 0x4,
+	RIFT_SENSOR_CV1_LENS_TYPE_KB_SPLINE = 0x5,
+	RIFT_SENSOR_CV1_LENS_TYPE_CV1 = 0x6,
+	RIFT_SENSOR_CV1_LENS_TYPE_OPAQUE_BLOB = 0x7,
+};
+
 struct rift_sensor_cv1_calib
 {
-	uint8_t unk1[0x30];      // 0x00
-	__lef32 fxy;             // 0x30
-	__lef32 cx;              // 0x34
-	__lef32 cy;              // 0x38
-	uint8_t unk2[0xC];       // 0x3c
-	__lef32 k1;              // 0x48
-	__lef32 k2;              // 0x4c
-	__lef32 k3;              // 0x50
-	__lef32 k4;              // 0x54
-	uint8_t pad[128 - 0x58]; // 0x58
+	__le64 magic;                        // 0x00
+	__le64 version;                      // 0x08
+	uint8_t header_unk1[0x8];            // 0x10
+	__le32 crc;                          // 0x18
+	__le32 payload_length;               // 0x1c
+	uint8_t body[CV1_CALIB_SIZE - 0x20]; // 0x20
 };
-SIZE_ASSERT(struct rift_sensor_cv1_calib, 128);
+SIZE_ASSERT(struct rift_sensor_cv1_calib, CV1_CALIB_SIZE);
 
 #pragma pack(pop)
 

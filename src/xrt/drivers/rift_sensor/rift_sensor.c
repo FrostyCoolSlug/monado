@@ -189,13 +189,158 @@ rift_sensor_post_init_callback(uint16_t vid, uint16_t pid, bool is_usb2, libusb_
 	return true;
 }
 
+static bool
+rift_sensor_decode_camera_calib_stream(struct rift_sensor_context *context,
+                                       __lef32 *stream,
+                                       struct t_camera_calibration *calib)
+{
+	int marker = (int)__lef32_to_cpu(stream[0]);
+	if (marker != 1) {
+		SENSOR_ERROR(context, "Invalid camera calibration stream marker: %d", marker);
+		return false;
+	}
+
+	int lens_type = (int)__lef32_to_cpu(stream[1]);
+	if (lens_type == RIFT_SENSOR_CV1_LENS_TYPE_OLD_BA_REJECTED) {
+		SENSOR_ERROR(context, "Invalid lens type in camera calibration stream: %d", lens_type);
+		return false;
+	}
+
+	int height = (int)__lef32_to_cpu(stream[2]);
+	int width = (int)__lef32_to_cpu(stream[3]);
+	float focal = __lef32_to_cpu(stream[4]);
+	float cx = __lef32_to_cpu(stream[5]);
+	float cy = __lef32_to_cpu(stream[6]);
+	float fov_distorted_deg = __lef32_to_cpu(stream[7]);
+	if (lens_type == RIFT_SENSOR_CV1_LENS_TYPE_OPAQUE_BLOB) {
+		// @todo parse this correctly, for now we don't need this, so don't handle it
+		return false;
+	}
+	float fov_pinhole_deg = __lef32_to_cpu(stream[8]);
+	if (fov_distorted_deg == 0.0f || fov_pinhole_deg == 0.0f) {
+		// @todo manually compute this as the official runtime does
+	}
+
+	float radial[4] = {0};
+	float affine[4] = {0};
+	float spline_ratio[32] = {0};
+
+	int radial_count = 0;
+	int affine_count = 0;
+	int spline_count = 0;
+
+	switch (lens_type) {
+	case RIFT_SENSOR_CV1_LENS_TYPE_RADTAN:
+	case RIFT_SENSOR_CV1_LENS_TYPE_RADTAN_RECIPROCAL: {
+		radial_count = 3;
+		radial[0] = __lef32_to_cpu(stream[9]);
+		radial[1] = __lef32_to_cpu(stream[10]);
+		radial[2] = __lef32_to_cpu(stream[11]);
+		affine_count = 2;
+		affine[0] = __lef32_to_cpu(stream[12]);
+		affine[1] = __lef32_to_cpu(stream[13]);
+
+		(*calib) = (struct t_camera_calibration){
+		    .image_size_pixels = {width, height},
+		    .intrinsics =
+		        {
+		            {focal, 0.0f, cx},
+		            {0.0f, focal, cy},
+		            {0.0f, 0.0f, 1.0f},
+		        },
+		    .rt5 = {.k1 = radial[0], .k2 = radial[1], .k3 = radial[2], .p1 = affine[0], .p2 = affine[1]},
+		    .distortion_model = T_DISTORTION_OPENCV_RADTAN_5,
+		};
+
+		return true;
+	}
+	case RIFT_SENSOR_CV1_LENS_TYPE_KB_LEGACY:
+	case RIFT_SENSOR_CV1_LENS_TYPE_KB_SPLINE: {
+		__lef32 *cursor_kb;
+		if (lens_type == RIFT_SENSOR_CV1_LENS_TYPE_KB_LEGACY) {
+			affine_count = 2;
+			affine[0] = __lef32_to_cpu(stream[9]);
+			affine[1] = __lef32_to_cpu(stream[10]);
+			cursor_kb = stream + 11;
+		} else {
+			affine_count = (int)__lef32_to_cpu(stream[9]);
+			cursor_kb = stream + 10;
+			for (int i = 0; i < affine_count; i++) {
+				affine[i] = __lef32_to_cpu(*(cursor_kb++));
+			}
+		}
+		spline_count = (int)__lef32_to_cpu(*cursor_kb);
+		__lef32 *cursor_spline = cursor_kb + 1;
+		for (int i = 0; i < spline_count; i++) {
+			spline_ratio[i] = __lef32_to_cpu(*(cursor_spline++));
+		}
+		float spline_end_slope = __lef32_to_cpu(*cursor_spline);
+		(void)spline_end_slope; // @note we aren't able to utilize this format yet.
+
+		// We auto-correct to the new format
+		lens_type = RIFT_SENSOR_CV1_LENS_TYPE_KB_SPLINE;
+
+		return false; // @todo implement this format
+	}
+	case RIFT_SENSOR_CV1_LENS_TYPE_CV1: {
+		radial_count = (int)__lef32_to_cpu(stream[9]);
+		__lef32 *cursor = stream + 10;
+		for (int i = 0; i < radial_count; i++) {
+			radial[i] = __lef32_to_cpu(*(cursor++));
+		}
+		affine_count = (int)__lef32_to_cpu(*(cursor++));
+		for (int i = 0; i < affine_count; i++) {
+			affine[i] = __lef32_to_cpu(*(cursor++));
+		}
+
+		(*calib) = (struct t_camera_calibration){
+		    .image_size_pixels = {width, height},
+		    .intrinsics =
+		        {
+		            {focal, 0.0f, cx},
+		            {0.0f, focal, cy},
+		            {0.0f, 0.0f, 1.0f},
+		        },
+		    .cv1 = {.k1 = radial[0],
+		            .k2 = radial[1],
+		            .k3 = radial[2],
+		            .k4 = radial[3],
+		            .p1 = affine[0],
+		            .p2 = affine[1],
+		            .g3 = affine[2],
+		            .g4 = affine[3]},
+		    .distortion_model = T_DISTORTION_RIFT_CV1,
+		};
+
+		return true;
+	}
+	default: {
+		SENSOR_ERROR(context, "Unknown lens type %d", lens_type);
+		return false;
+	}
+	}
+
+	return false;
+}
+
 static int
 rift_sensor_read_calibration(struct rift_sensor_context *context,
                              struct rift_sensor *sensor,
                              const struct libusb_device_descriptor *desc)
 {
 	int ret;
-	double fx = 0.0, fy = 0.0, cx = 0.0, cy = 0.0;
+
+	struct t_camera_calibration default_calib = {
+	    .image_size_pixels = {RIFT_SENSOR_WIDTH, RIFT_SENSOR_HEIGHT},
+	    .intrinsics =
+	        {
+	            {733.0, 0.0, RIFT_SENSOR_WIDTH / 2.0},
+	            {0.0, 733.0, RIFT_SENSOR_HEIGHT / 2.0},
+	            {0.0, 0.0, 1.0},
+	        },
+	    .rt5 = {.k1 = -0.2947, .k2 = 0.1154, .k3 = 0.0, .p1 = -0.024, .p2 = 0.0},
+	    .distortion_model = T_DISTORTION_OPENCV_RADTAN_5,
+	};
 
 	switch (desc->idProduct) {
 	case OCULUS_DK2_SENSOR_PID: {
@@ -215,10 +360,10 @@ rift_sensor_read_calibration(struct rift_sensor_context *context,
 			}
 		}
 
-		fx = __lef64_to_cpu(calib.fx);
-		fy = __lef64_to_cpu(calib.fy);
-		cx = __lef64_to_cpu(calib.cx);
-		cy = __lef64_to_cpu(calib.cy);
+		double fx = __lef64_to_cpu(calib.fx);
+		double fy = __lef64_to_cpu(calib.fy);
+		double cx = __lef64_to_cpu(calib.cx);
+		double cy = __lef64_to_cpu(calib.cy);
 
 		calibration_params.k1 = __lef64_to_cpu(calib.k1);
 		calibration_params.k2 = __lef64_to_cpu(calib.k2);
@@ -228,45 +373,61 @@ rift_sensor_read_calibration(struct rift_sensor_context *context,
 
 		sensor->calibration.rt5 = calibration_params;
 
+		// clang-format off
+		memcpy(sensor->calibration.intrinsics[0], (double[3]){fx,   0.0f, cx}, sizeof(double) * 3);
+		memcpy(sensor->calibration.intrinsics[1], (double[3]){0.0f, fy,   cy}, sizeof(double) * 3);
+		memcpy(sensor->calibration.intrinsics[2], (double[3]){0.0,  0.0f, 1.0}, sizeof(double) * 3);
+		// clang-format on
+
 		break;
 	}
 	case OCULUS_CV1_SENSOR_PID: {
 		sensor->frame_interval = 19200 * OS_NS_PER_USEC;
 		sensor->variant = RIFT_VARIANT_CV1;
-		sensor->calibration.distortion_model = T_DISTORTION_FISHEYE_KB4;
-		struct t_camera_calibration_kb4_params calibration_params;
 
+		// Read a the 160-byte calibration block at EEPROM address 0x1d000
 		struct rift_sensor_cv1_calib calib;
-
-		// Read a 128-byte block at EEPROM address 0x1d000
-		ret = rift_sensor_esp770u_flash_read(sensor->hid_dev, 0x1d000, ((uint8_t *)&calib), sizeof(calib));
+		ret = rift_sensor_esp770u_flash_read(sensor->hid_dev, 0x1d000, (uint8_t *)&calib, sizeof(calib));
 		if (ret < 0) {
 			SENSOR_ERROR(context, "CV1 EEPROM read failed! reason %d", ret);
 			return ret;
 		}
 
-		// Fisheye distortion model parameters from firmware
-		fx = fy = __lef32_to_cpu(calib.fxy);
-		cx = __lef32_to_cpu(calib.cx);
-		cy = __lef32_to_cpu(calib.cy);
+		uint64_t magic = __le64_to_cpu(calib.magic);
+		if (magic != CV1_CALIB_MAGIC) {
+			SENSOR_ERROR(context,
+			             "CV1 EEPROM read failed! Invalid magic 0x%016" PRIx64 ", expected 0x%" PRIx64,
+			             magic, CV1_CALIB_MAGIC);
+			sensor->calibration = default_calib;
+			return 0;
+		}
 
-		calibration_params.k1 = __lef32_to_cpu(calib.k1);
-		calibration_params.k2 = __lef32_to_cpu(calib.k2);
-		calibration_params.k3 = __lef32_to_cpu(calib.k3);
-		calibration_params.k4 = __lef32_to_cpu(calib.k4);
+		uint64_t version = __le64_to_cpu(calib.version);
+		if (version == 0) {
+			SENSOR_ERROR(context, "Invalid sensor version %" PRIu64 ", expected > 0", version);
+			return -1;
+		}
 
-		sensor->calibration.kb4 = calibration_params;
+		uint32_t crc = __le32_to_cpu(calib.crc);
+		uint32_t payload_length = __le32_to_cpu(calib.payload_length);
+		uint32_t crc_length = payload_length + 0x20;
+		calib.crc = 0; // zero out before CRC
+		(void)crc;     // @todo: implement CRC check with crc length
+		(void)crc_length;
+
+		if (!rift_sensor_decode_camera_calib_stream(context, (__lef32 *)&calib.body, &sensor->calibration)) {
+			sensor->calibration = default_calib;
+			SENSOR_ERROR(context, "Failed to decode camera calibration stream");
+			return -1;
+		}
+
+		SENSOR_DEBUG(context, "CV1 sensor calibration: version %" PRIu64 ", payload length %u", version,
+		             payload_length);
 
 		break;
 	}
 	default: SENSOR_ERROR(context, "Unknown sensor PID %" PRIu16, desc->idProduct); return -1;
 	}
-
-	// clang-format off
-	memcpy(sensor->calibration.intrinsics[0], (double[3]){fx,   0.0f, cx}, sizeof(double) * 3);
-	memcpy(sensor->calibration.intrinsics[1], (double[3]){0.0f, fy,   cy}, sizeof(double) * 3);
-	memcpy(sensor->calibration.intrinsics[2], (double[3]){0.0,  0.0f, 1.0}, sizeof(double) * 3);
-	// clang-format on
 
 	return 0;
 }
