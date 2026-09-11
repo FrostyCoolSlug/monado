@@ -755,14 +755,14 @@ run_keypoint_estimation_unsafe(keypoint_estimation_run_info &info)
 
 	const OrtValue *inputs[] = {state->wraps[0].tensor, state->wraps[1].tensor, state->wraps[2].tensor};
 	const char *input_names[] = {state->wraps[0].name, state->wraps[1].name, state->wraps[2].name};
+	static_assert(ARRAY_SIZE(input_names) == ARRAY_SIZE(inputs));
 
 	OrtValue *output_tensors[] = {nullptr, nullptr, nullptr, nullptr};
 	const char *output_names[] = {"heatmap_xy", "heatmap_depth", "scalar_extras", "curls"};
+	static_assert(ARRAY_SIZE(output_names) == ARRAY_SIZE(output_tensors));
 
 	{
 		XRT_TRACE_IDENT(model);
-		assert(ARRAY_SIZE(input_names) == ARRAY_SIZE(inputs));
-		assert(ARRAY_SIZE(output_names) == ARRAY_SIZE(output_tensors));
 		ORT_SAFE(wrap, Run(wrap.session, nullptr, input_names, inputs, ARRAY_SIZE(input_names), output_names,
 		                   ARRAY_SIZE(output_names), output_tensors));
 	}
