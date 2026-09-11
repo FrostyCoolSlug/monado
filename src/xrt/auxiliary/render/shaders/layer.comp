@@ -424,17 +424,27 @@ vec4 do_projection_uv(vec2 view_uv, uint layer, out vec2 out_uv)
 		view_uv = transform_uv_timewarp(view_uv, layer);
 	}
 
+	// Output view space coordinates, before subimage. Inset layer blend
+	// expects coordinates to be in range [0..1] across the layer, anything
+	// outside that is considered out of the view frustum, and sub image view
+	// coordinates may not cover the whole range. Set before view coordinates
+	// are rejected so that an early return still reports these to the inset
+	// layer blend code.
+	out_uv = view_uv;
+
+	// Reject coordinates outside the view frustum.
+	bool in_frustum_bounds =
+		all(greaterThanEqual(view_uv, vec2(0.0))) &&
+		all(lessThan(view_uv, vec2(1.0)));
+	if (!in_frustum_bounds) {
+		return vec4(0.0);
+	}
+
 	// Map from view space coordinates to sub image view coordinates.
 	vec2 image_uv = transform_uv_subimage(view_uv, layer);
 
 	// Sample the source.
 	vec4 colour = vec4(texture(source[source_image_index], image_uv).rgba);
-
-	// Output view space coordinates, before subimage. Inset layer blend
-	// expects coordinates to be in range [0..1] across the layer, anything
-	// outside that is considered out of the view frustum, and sub image view
-	// coordinates may not cover the whole range.
-	out_uv = view_uv;
 
 	return colour;
 }
