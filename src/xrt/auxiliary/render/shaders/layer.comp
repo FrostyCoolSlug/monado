@@ -430,7 +430,11 @@ vec4 do_projection_uv(vec2 view_uv, uint layer, out vec2 out_uv)
 	// Sample the source.
 	vec4 colour = vec4(texture(source[source_image_index], image_uv).rgba);
 
-	out_uv = image_uv;
+	// Output view space coordinates, before subimage. Inset layer blend
+	// expects coordinates to be in range [0..1] across the layer, anything
+	// outside that is considered out of the view frustum, and sub image view
+	// coordinates may not cover the whole range.
+	out_uv = view_uv;
 
 	return colour;
 }
