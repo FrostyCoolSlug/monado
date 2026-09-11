@@ -111,7 +111,6 @@ Checks:       |
     -misc-const-correctness,
     -misc-header-include-cycle,
     -misc-include-cleaner,
-    -misc-misplaced-const,
     -misc-no-recursion,
     -misc-non-private-member-variables-in-classes,
     -misc-redundant-expression,
