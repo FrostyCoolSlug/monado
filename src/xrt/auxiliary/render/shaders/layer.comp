@@ -183,17 +183,6 @@ vec2 position_to_view_uv(ivec2 extent, uint ix, uint iy)
 	return view_uv;
 }
 
-vec2 transform_uv_subimage(vec2 uv, uint layer)
-{
-	vec2 values = uv;
-
-	// To deal with OpenGL flip and sub image view.
-	values.xy = fma(values.xy, LAYER.post_transform.zw, LAYER.post_transform.xy);
-
-	// Ready to be used.
-	return values.xy;
-}
-
 vec2 transform_uv_timewarp(vec2 uv, uint layer)
 {
 	vec4 values = vec4(uv, -1, 1);
@@ -209,20 +198,17 @@ vec2 transform_uv_timewarp(vec2 uv, uint layer)
 	// From [-1, 1] to [0, 1]
 	values.xy = values.xy * 0.5 + 0.5;
 
-	// To deal with OpenGL flip and sub image view.
-	values.xy = fma(values.xy, LAYER.post_transform.zw, LAYER.post_transform.xy);
-
-	// Done.
 	return values.xy;
 }
 
-vec2 transform_uv(vec2 uv, uint layer)
+vec2 transform_uv_subimage(vec2 uv, uint layer)
 {
-	if (k_do_timewarp) {
-		return transform_uv_timewarp(uv, layer);
-	} else {
-		return transform_uv_subimage(uv, layer);
-	}
+	vec2 values = uv;
+
+	// To deal with OpenGL flip and sub image view.
+	values.xy = fma(values.xy, LAYER.post_transform.zw, LAYER.post_transform.xy);
+
+	return values.xy;
 }
 
 vec4 do_cylinder(vec2 view_uv, uint layer)
@@ -433,13 +419,18 @@ vec4 do_projection_uv(vec2 view_uv, uint layer, out vec2 out_uv)
 {
 	uint source_image_index = LAYER.image_info.color_image_index;
 
-	// Do any transformation needed.
-	vec2 uv = transform_uv(view_uv, layer);
+	// Apply timewarp transformation if enabled.
+	if (k_do_timewarp) {
+		view_uv = transform_uv_timewarp(view_uv, layer);
+	}
+
+	// Map from view space coordinates to sub image view coordinates.
+	vec2 image_uv = transform_uv_subimage(view_uv, layer);
 
 	// Sample the source.
-	vec4 colour = vec4(texture(source[source_image_index], uv).rgba);
+	vec4 colour = vec4(texture(source[source_image_index], image_uv).rgba);
 
-	out_uv = uv;
+	out_uv = image_uv;
 
 	return colour;
 }
