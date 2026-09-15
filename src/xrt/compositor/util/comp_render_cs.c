@@ -278,11 +278,15 @@ do_cs_projection_layer(const struct comp_layer *layer,
 
 	// unused if timewarp is off
 	if (do_timewarp) {
-		render_calc_time_warp_matrix(                          //
-		    &vd->pose,                                         //
-		    &vd->fov,                                          //
-		    world_pose_scanout_begin,                          //
-		    &ubo_data->layers[cur_layer].transforms_timewarp); //
+		render_calc_time_warp_matrix(                 //
+		    &vd->pose,                                //
+		    &vd->fov,                                 //
+		    world_pose_scanout_begin,                 //
+		    &ubo_data->layers[cur_layer].transforms); //
+	} else {
+		render_calc_time_warp_projection(             //
+		    &vd->fov,                                 //
+		    &ubo_data->layers[cur_layer].transforms); //
 	}
 
 	*out_cur_image = cur_image;

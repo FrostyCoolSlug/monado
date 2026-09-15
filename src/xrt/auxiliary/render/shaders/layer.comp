@@ -88,7 +88,7 @@ struct Layer {
 
 	// for projection layers
 
-	// timewarp matrices
+	// fov and timewarp matrix
 	mat4 transform;
 
 	// per-layer chroma key settings
@@ -183,7 +183,7 @@ vec2 position_to_view_uv(ivec2 extent, uint ix, uint iy)
 	return view_uv;
 }
 
-vec2 transform_uv_timewarp(vec2 uv, uint layer)
+vec2 transform_uv_fov_timewarp(vec2 uv, uint layer)
 {
 	vec4 values = vec4(uv, -1, 1);
 
@@ -191,7 +191,7 @@ vec2 transform_uv_timewarp(vec2 uv, uint layer)
 	values.xy = fma(values.xy, ubo.pre_transform.zw, ubo.pre_transform.xy);
 	values.y = -values.y; // Flip to OpenXR coordinate system.
 
-	// Timewarp.
+	// Apply FOV and timewarp.
 	values = LAYER.transform * values;
 	values.xy = values.xy * (1.0 / max(values.w, 0.00001));
 
@@ -419,10 +419,8 @@ vec4 do_projection_uv(vec2 view_uv, uint layer, out vec2 out_uv)
 {
 	uint source_image_index = LAYER.image_info.color_image_index;
 
-	// Apply timewarp transformation if enabled.
-	if (k_do_timewarp) {
-		view_uv = transform_uv_timewarp(view_uv, layer);
-	}
+	// Apply FOV and timewarp transformation.
+	view_uv = transform_uv_fov_timewarp(view_uv, layer);
 
 	// Output view space coordinates, before subimage. Inset layer blend
 	// expects coordinates to be in range [0..1] across the layer, anything
