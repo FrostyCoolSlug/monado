@@ -1270,7 +1270,8 @@ rift_devices_create(struct os_hid_device *hmd_dev,
 		hmd->base.inputs[1].name = XRT_INPUT_GENERIC_HEAD_DETECT;
 	}
 	hmd->base.supported.orientation_tracking = true;
-	hmd->base.supported.position_tracking = false; // set to true once we are trying to get the sensor 6dof to work
+	// @todo Disable this when the user doesn't have sensors connected.
+	hmd->base.supported.position_tracking = true;
 	hmd->base.supported.presence = variant == RIFT_VARIANT_CV1;
 
 	// Set up display details
