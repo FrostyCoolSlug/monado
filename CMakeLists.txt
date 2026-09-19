@@ -281,7 +281,7 @@ option_with_deps(XRT_MODULE_COMPOSITOR_MULTI "Build multi-client compositor libr
 option_with_deps(XRT_MODULE_COMPOSITOR_NULL "Build testing null compositor" DEPENDS XRT_MODULE_COMPOSITOR XRT_HAVE_VULKAN)
 option_with_deps(XRT_MODULE_COMPOSITOR_UTIL "Build compositor utility library" DEPENDS XRT_MODULE_COMPOSITOR XRT_HAVE_VULKAN)
 option_with_deps(XRT_MODULE_COMPOSITOR_MOCK "Build mock compositor library" DEPENDS XRT_MODULE_COMPOSITOR)
-option_with_deps(XRT_MODULE_CONSTELLATION_TRACKING "Enable constellation tracking")
+option_with_deps(XRT_MODULE_CONSTELLATION_TRACKING "Enable constellation tracking" DEPENDS XRT_HAVE_BIGCERES)
 option_with_deps(XRT_MODULE_MERCURY_HANDTRACKING "Enable Mercury hand tracking" DEPENDS XRT_HAVE_OPENCV XRT_HAVE_ONNXRUNTIME)
 
 option(XRT_MODULE_MONADO_CLI "Build monado-cli" ON)

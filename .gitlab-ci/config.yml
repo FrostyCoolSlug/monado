@@ -48,6 +48,7 @@ fdo_ci_templates_sha: 5cc6ded703fc990f9d055f0d948ffd4460a9ca40
   libuvc-dev:
   libv4l-dev:
   libwayland-dev:
+  libceres-dev:
   # Only used for building packages
   debhelper:
   devscripts:
@@ -243,10 +244,10 @@ distributions:
         # python-attrs: xr-hardware-git
         packages:
           base-devel:
-          pipewire-jack:
-          wireplumber:
           bluez-libs:
+          ceres-solver:
           check:
+          cjson:
           clang:
           cmake:
           diffutils:
@@ -256,30 +257,31 @@ distributions:
           git:
           glfw-x11:
           glslang:
+          glu:
           graphviz:
           gtk3:
           hidapi:
+          libbsd:
           libusb:
           libxrandr:
           mesa:
+          meson:
           ninja:
+          onnxruntime-cpu:
           opencv:
           patch:
+          pipewire-jack:
           pkgconfig:
+          python-attrs:
+          python-setuptools:
           python3:
           qt6-base:
           v4l-utils:
           vulkan-headers:
           vulkan-icd-loader:
-          wget:
-          meson:
-          python-setuptools:
-          glu:
           wayland:
-          libbsd:
-          python-attrs:
-          cjson:
-          onnxruntime-cpu:
+          wget:
+          wireplumber:
         build_jobs:
           - name: "arch"
 
@@ -296,6 +298,7 @@ distributions:
           - "cmd:glslangValidator"
           - "cmd:wayland-scanner"
           - "build-base"
+          - "ceres-dev"
           - "doxygen"
           - "eigen-dev"
           - "eudev-dev"

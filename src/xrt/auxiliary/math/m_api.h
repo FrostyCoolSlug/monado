@@ -240,7 +240,7 @@ math_vec3_f64_normalize(struct xrt_vec3_f64 *in);
  * @ingroup aux_math
  */
 void
-math_vec3_f64_convert_opencv(const struct xrt_vec3_f64 *in, struct xrt_vec3_f64 *out);
+math_vec3_f64_convert_from_opencv(const struct xrt_vec3_f64 *in, struct xrt_vec3_f64 *out);
 
 
 /*
@@ -863,6 +863,26 @@ math_pose_transform_point(const struct xrt_pose *transform, const struct xrt_vec
  */
 void
 math_pose_convert_from_opencv(const struct xrt_pose *in, struct xrt_pose *out);
+
+
+/*
+ *
+ * Space relation functions.
+ *
+ */
+
+
+/*!
+ * Convert a space relation from the OpenCV coordinate system to the OpenXR coordinate system and back. OpenCV camera
+ * space coordinates has +Y down and +Z away from the user.
+ *
+ * The input and output may be the same pointer.
+ *
+ * @relates xrt_pose
+ * @ingroup aux_math
+ */
+void
+math_space_relation_convert_from_opencv(const struct xrt_space_relation *in, struct xrt_space_relation *out);
 
 
 /*

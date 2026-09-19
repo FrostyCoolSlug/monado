@@ -13,13 +13,11 @@ add_library(
 	led_search_model.h
 	pose_metrics.c
 	pose_metrics.h
-	pose_optimize.h
-	t_constellation_tracker.cpp
-	t_constellation_tracker.h
 	t_constellation_tracker_dataset.cpp
 	t_constellation_tracker_dataset.hpp
 	t_constellation_tracker_internal.hpp
-	t_led_sync_refinement.c
+	t_constellation_tracker.cpp
+	t_constellation_tracker.h
 	t_led_sync_refinement.h
 	t_rift_blobwatch.c
 	t_rift_blobwatch.h
@@ -30,31 +28,50 @@ add_library(
 	lambdatwist/quadratic.h
 	lambdatwist/refine_lambda.h
 	lambdatwist/vec.h
+	led_sync/t_led_sync_refinement.c
+	led_sync/pssense_gray_code.h
+	led_sync/led_sync_internal.h
+	optimizer/imu_preintegration.hpp
+	optimizer/internal_math.cpp
+	optimizer/internal_math.hpp
+	optimizer/math.hpp
+	optimizer/offline_sensor_calibration.cpp
+	optimizer/offline_sensor_calibration.hpp
+	optimizer/pose_optimize.cpp
+	optimizer/pose_optimize.hpp
+	optimizer/ransac.cpp
+	optimizer/ransac.hpp
+	optimizer/sensor_fusion.cpp
+	optimizer/sensor_fusion.hpp
 	)
 target_link_libraries(
 	constellation
 	PRIVATE
 		xrt-interfaces
+		xrt-external-bigceres
+		xrt-optimized-math
 		tracking-includes
 		aux_os
 		aux_util
 		aux_util_scribble
 		aux_math
 		aux_tracking
+		Eigen3::Eigen
 	)
-
-if(XRT_HAVE_OPENCV)
-	target_include_directories(constellation PRIVATE ${OpenCV_INCLUDE_DIRS})
-	target_link_libraries(constellation PRIVATE ${OpenCV_LIBRARIES})
-	target_sources(constellation PRIVATE pose_optimize.cpp)
-endif()
 
 if(XRT_FEATURE_RERUN)
 	target_link_libraries(constellation PRIVATE rerun_sdk)
 
 	target_sources(
 		constellation
-		PRIVATE constellation_tracker_rerun.cpp constellation_tracker_rerun.hpp
+		PRIVATE
+			constellation_rerun_common.hpp
+			constellation_tracker_rerun.cpp
+			constellation_tracker_rerun.hpp
 			constellation_tracker_rerun_blobwatch.h
+			optimizer/offline_sensor_calibration_rerun.cpp
+			optimizer/offline_sensor_calibration_rerun.hpp
+			optimizer/sensor_fusion_rerun.cpp
+			optimizer/sensor_fusion_rerun.hpp
 		)
 endif()

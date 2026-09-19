@@ -13,7 +13,6 @@
 #include "math/m_api.h"
 
 #include <algorithm>
-#include <array>
 #include <cstdint>
 #include <format>
 
@@ -24,102 +23,20 @@ using namespace xrt::tracking::constellation;
 // Anonymous namespace for internal functions.
 namespace {
 
-constexpr float AXIS_LENGTH = 0.03f;
-constexpr float BLOB_RADIUS_PIXELS = 3.0f;
-
 /*
  *
  * Helper functions
  *
  */
 
-rerun::components::Translation3D
-ToRerunTranslation(const xrt_vec3 &position)
-{
-	return rerun::components::Translation3D(position.x, position.y, position.z);
-}
-
-rerun::Rotation3D
-ToRerunRotation(const xrt_quat &orientation)
-{
-	return rerun::Rotation3D(
-	    rerun::datatypes::Quaternion::from_xyzw(orientation.x, orientation.y, orientation.z, orientation.w));
-}
-
-rerun::Transform3D
-ToRerunTransform(const xrt_pose &pose, bool from_parent = true)
-{
-	auto transform = rerun::Transform3D()
-	                     .with_translation(ToRerunTranslation(pose.position))
-	                     .with_rotation(ToRerunRotation(pose.orientation));
-
-	if (from_parent) {
-		transform = std::move(transform).with_relation(rerun::components::TransformRelation::ParentFromChild);
-	}
-
-	return transform;
-}
-
 rerun::components::Color
-MatchedBlobColor(t_constellation_device_id_t device_id, float brightness)
-{
-	// Simple deterministic hash for device ID, ensuring device ID is non-zero
-	uint8_t r = (((device_id + 1) * 37) % 127) + 128;
-	uint8_t g = (((device_id + 1) * 57) % 127) + 128;
-	uint8_t b = (((device_id + 1) * 97) % 127) + 128;
-
-	return rerun::components::Color(r, g, b, static_cast<uint8_t>(255 * brightness));
-}
-
-rerun::components::Color
-UnmatchedBlobColor(float brightness)
+unmatchedBlobColor(float brightness)
 {
 	uint8_t r = 255;
 	uint8_t g = 255;
 	uint8_t b = 0;
 
 	return rerun::components::Color(r, g, b, static_cast<uint8_t>(255 * brightness));
-}
-
-rerun::Pinhole
-MakePinhole(const t_camera_calibration &calibration)
-{
-	// Construct the 3x3 intrinsic matrix in column-major order.
-	std::array<float, 9> image_from_camera = {
-	    static_cast<float>(calibration.intrinsics[0][0]),
-	    static_cast<float>(calibration.intrinsics[1][0]),
-	    static_cast<float>(calibration.intrinsics[2][0]),
-	    //
-	    static_cast<float>(calibration.intrinsics[0][1]),
-	    static_cast<float>(calibration.intrinsics[1][1]),
-	    static_cast<float>(calibration.intrinsics[2][1]),
-	    //
-	    static_cast<float>(calibration.intrinsics[0][2]),
-	    static_cast<float>(calibration.intrinsics[1][2]),
-	    static_cast<float>(calibration.intrinsics[2][2]),
-	};
-
-	return rerun::Pinhole(rerun::components::PinholeProjection(image_from_camera))
-	    .with_resolution(calibration.image_size_pixels.w, calibration.image_size_pixels.h)
-	    .with_image_plane_distance(0.2f);
-}
-
-rerun::Image
-MakeImage(const xrt_frame &frame)
-{
-	// We only support L8 format for now
-	assert(frame.format == XRT_FORMAT_L8);
-
-	std::vector<uint8_t> image_data(frame.width * frame.height);
-	// Copy the frame data into the image_data vector, accounting for stride
-	for (uint32_t y = 0; y < frame.height; ++y) {
-		std::memcpy(&image_data[y * frame.width], &frame.data[y * frame.stride], frame.width);
-	}
-
-	// Create a rerun image from the xrt_frame data.
-	return rerun::Image(
-	    rerun::archetypes::Image::from_grayscale8(std::move(image_data), {frame.width, frame.height})
-	        .with_opacity(0.5f));
 }
 
 /*
@@ -131,48 +48,30 @@ MakeImage(const xrt_frame &frame)
 static constexpr std::string timeline_name = "keyframes";
 
 std::string
-GetCameraEntityName(size_t mosaic_idx, size_t camera_idx)
+getCameraImageEntityName(size_t mosaic_idx, size_t camera_idx)
 {
-	return std::format("cameras/{}/{}", mosaic_idx, camera_idx);
+	return std::format("{}/image", getWorldCameraEntityName(mosaic_idx, camera_idx));
 }
 
 std::string
-GetWorldEntityName()
+getCameraImageBlobsEntityName(size_t mosaic_idx, size_t camera_idx)
 {
-	return "world";
+	return std::format("{}/blobs", getCameraImageEntityName(mosaic_idx, camera_idx));
 }
 
 std::string
-GetWorldCameraEntityName(size_t mosaic_idx, size_t camera_idx)
-{
-	return std::format("{}/{}", GetWorldEntityName(), GetCameraEntityName(mosaic_idx, camera_idx));
-}
-
-std::string
-GetCameraImageEntityName(size_t mosaic_idx, size_t camera_idx)
-{
-	return std::format("{}/image", GetWorldCameraEntityName(mosaic_idx, camera_idx));
-}
-
-std::string
-GetCameraImageBlobsEntityName(size_t mosaic_idx, size_t camera_idx)
-{
-	return std::format("{}/blobs", GetCameraImageEntityName(mosaic_idx, camera_idx));
-}
-
-std::string
-GetCameraTrackedDeviceEntityName(const CameraSample &camera_sample, t_constellation_device_id_t device_id)
+getCameraTrackedDeviceEntityName(const CameraSample &camera_sample, t_constellation_device_id_t device_id)
 {
 	return std::format("{}/tracked_devices/{}",
-	                   GetWorldCameraEntityName(camera_sample.mosaic_index, camera_sample.camera_index), device_id);
+	                   getWorldCameraEntityName(camera_sample.mosaic_index, camera_sample.camera_index), device_id);
 }
 
 std::string
-GetCameraTrackedDevicePoseEntityName(const CameraSample &camera_sample,
+getCameraTrackedDevicePoseEntityName(const CameraSample &camera_sample,
                                      t_constellation_device_id_t device_id,
                                      bool prior)
 {
-	return std::format("{}/{}", GetCameraTrackedDeviceEntityName(camera_sample, device_id),
+	return std::format("{}/{}", getCameraTrackedDeviceEntityName(camera_sample, device_id),
 	                   prior ? "prior_pose" : "pose");
 }
 
@@ -189,14 +88,14 @@ namespace xrt::tracking::constellation {
 void
 RerunContext::logStaticScene(const CameraSample &camera_sample, const t_camera_calibration &calibration)
 {
-	std::string camera_entity = GetWorldCameraEntityName(camera_sample.mosaic_index, camera_sample.camera_index);
+	std::string camera_entity = getWorldCameraEntityName(camera_sample.mosaic_index, camera_sample.camera_index);
 	std::string camera_image_entity =
-	    GetCameraImageEntityName(camera_sample.mosaic_index, camera_sample.camera_index);
+	    getCameraImageEntityName(camera_sample.mosaic_index, camera_sample.camera_index);
 
 	this->stream->log_static("/", rerun::ViewCoordinates::RIGHT_HAND_Y_DOWN);
-	this->stream->log_static(GetWorldEntityName(), rerun::TransformAxes3D(AXIS_LENGTH));
-	this->stream->log_static(camera_entity + "/axes", rerun::TransformAxes3D(AXIS_LENGTH));
-	this->stream->log_static(camera_image_entity, MakePinhole(calibration));
+	this->stream->log_static(getWorldEntityName(), rerun::TransformAxes3D(kAxisLength));
+	this->stream->log_static(camera_entity + "/axes", rerun::TransformAxes3D(kAxisLength));
+	this->stream->log_static(camera_image_entity, makePinhole(calibration));
 }
 
 void
@@ -218,11 +117,11 @@ RerunContext::logLedModel(const std::string &entity_name,
 		const t_constellation_tracker_led &led = led_model.leds[i];
 		positions.emplace_back(led.position.x, led.position.y, led.position.z);
 		radii.emplace_back(led.radius_m);
-		colors.emplace_back(MatchedBlobColor(device_id, prior ? 0.1f : 1.0f)); // Full brightness for LED model
+		colors.emplace_back(deviceColor(device_id, prior ? 0.1f : 1.0f)); // Full brightness for LED model
 		labels.emplace_back(std::to_string(led.id));
 	}
 
-	this->stream->log_static(entity_name + "/axes", rerun::TransformAxes3D(AXIS_LENGTH));
+	this->stream->log_static(entity_name + "/axes", rerun::TransformAxes3D(kAxisLength));
 	this->stream->log_static(      //
 	    entity_name + "/leds",     //
 	    rerun::Points3D(positions) //
@@ -236,7 +135,7 @@ void
 RerunContext::logBlobSet(const CameraSample &camera_sample)
 {
 	std::string camera_image_blobs_entity =
-	    GetCameraImageBlobsEntityName(camera_sample.mosaic_index, camera_sample.camera_index);
+	    getCameraImageBlobsEntityName(camera_sample.mosaic_index, camera_sample.camera_index);
 
 	std::vector<rerun::Position2D> positions;
 	std::vector<rerun::Radius> radii;
@@ -251,11 +150,13 @@ RerunContext::logBlobSet(const CameraSample &camera_sample)
 		const t_blob &blob = camera_sample.blobs[i];
 		bool matched = (blob.matched_device_id != XRT_CONSTELLATION_INVALID_DEVICE_ID);
 
-		positions.emplace_back(blob.center.x, blob.center.y);
-		float radius = std::max(std::max(blob.size.x, blob.size.y) * 0.5f, BLOB_RADIUS_PIXELS);
+		// Blobs are offset by 0.5px because in OpenCV distortion integers are pixel centers, but they aren't in
+		// Rerun.
+		positions.emplace_back(blob.center_distorted.x + 0.5f, blob.center_distorted.y + 0.5f);
+		float radius = std::max(std::max(blob.size.x, blob.size.y) * 0.5f, kBlobRadiusPixels);
 		radii.emplace_back(rerun::Radius::ui_points(radius));
-		colors.emplace_back(matched ? MatchedBlobColor(blob.matched_device_id, blob.brightness)
-		                            : UnmatchedBlobColor(blob.brightness));
+		colors.emplace_back(matched ? deviceColor(blob.matched_device_id, blob.brightness)
+		                            : unmatchedBlobColor(blob.brightness));
 
 		if (matched) {
 			labels.emplace_back(std::format("LED {}", blob.matched_device_led_id));
@@ -287,7 +188,7 @@ RerunContext::logFrameCameraMetrics(const CameraSample &camera_sample)
 	}
 
 	std::string camera_metrics =
-	    GetWorldCameraEntityName(camera_sample.mosaic_index, camera_sample.camera_index) + "/metrics";
+	    getWorldCameraEntityName(camera_sample.mosaic_index, camera_sample.camera_index) + "/metrics";
 
 	this->stream->log(camera_metrics + "/brightness", rerun::Scalars(brightness));
 	this->stream->log(camera_metrics + "/blob_count", rerun::Scalars(static_cast<float>(camera_sample.blob_count)));
@@ -310,10 +211,38 @@ RerunContext::logFrameDeviceMetrics(const CameraSample &camera_sample, const Dev
 	}
 
 	std::string device_metrics =
-	    std::format("{}/metrics", GetCameraTrackedDeviceEntityName(camera_sample, device_state.device_id));
+	    std::format("{}/metrics", getCameraTrackedDeviceEntityName(camera_sample, device_state.device_id));
 
 	this->stream->log(device_metrics + "/brightness", rerun::Scalars(found_pose.average_blob_brightness));
 	this->stream->log(device_metrics + "/matched_blob_count", rerun::Scalars(matched_blob_count));
+}
+
+void
+RerunContext::logFoundPose(const CameraSample &camera_sample,
+                           const std::unique_ptr<Device> &device,
+                           const FoundDevicePose &found_pose)
+{
+	std::string camera_device_pose_entity = getCameraTrackedDevicePoseEntityName(camera_sample, device->id, false);
+	std::string camera_device_covariance_entity = camera_device_pose_entity + "/covariance";
+
+	const xrt_pose &Tcv_cam_device = found_pose.Tcv_cam_device;
+	this->stream->log(camera_device_pose_entity, toRerunTransform(Tcv_cam_device));
+	this->logLedModel(camera_device_pose_entity, device->id, device->params.led_model, false);
+
+	xrt_vec3 radii;
+	xrt_quat Q_cam_cov;
+	covariancePositionRadius(found_pose.covariance, radii, Q_cam_cov);
+
+	xrt_pose Tcv_device_cov = XRT_POSE_IDENTITY;
+	// Bring the covariance's orientation into camera space
+	math_quat_invert(&Tcv_cam_device.orientation, &Tcv_device_cov.orientation);
+	// Rotate by the covariance's orientation
+	math_quat_rotate(&Tcv_device_cov.orientation, &Q_cam_cov, &Tcv_device_cov.orientation);
+
+	this->stream->log(camera_device_covariance_entity, toRerunTransform(Tcv_device_cov));
+	this->stream->log(
+	    camera_device_covariance_entity,
+	    rerun::archetypes::Ellipsoids3D::from_half_sizes(rerun::components::HalfSize3D(radii.x, radii.y, radii.z)));
 }
 
 /*
@@ -325,7 +254,7 @@ RerunContext::logFrameDeviceMetrics(const CameraSample &camera_sample, const Dev
 void
 RerunContext::logSample(const ConstellationTracker &tracker, const CameraSample &camera_sample)
 {
-	std::string camera_entity = GetWorldCameraEntityName(camera_sample.mosaic_index, camera_sample.camera_index);
+	std::string camera_entity = getWorldCameraEntityName(camera_sample.mosaic_index, camera_sample.camera_index);
 
 	const auto &calibration =
 	    tracker.mosaics[camera_sample.mosaic_index]->cameras[camera_sample.camera_index]->calibration;
@@ -339,7 +268,7 @@ RerunContext::logSample(const ConstellationTracker &tracker, const CameraSample 
 		math_pose_convert_from_opencv(&camera_sample.Txr_world_cam.value(), &Tcv_world_cam_value);
 		Tcv_world_cam = Tcv_world_cam_value;
 
-		this->stream->log(camera_entity, ToRerunTransform(Tcv_world_cam_value));
+		this->stream->log(camera_entity, toRerunTransform(Tcv_world_cam_value));
 	}
 
 	for (uint32_t i = 0; i < camera_sample.device_count; i++) {
@@ -360,18 +289,13 @@ RerunContext::logSample(const ConstellationTracker &tracker, const CameraSample 
 		if (device_state.found_pose.has_value()) {
 			const auto &found_pose = device_state.found_pose.value();
 
-			std::string camera_device_pose_entity =
-			    GetCameraTrackedDevicePoseEntityName(camera_sample, device_id, false);
-
-			const xrt_pose &Tcv_cam_device = found_pose.Tcv_cam_device;
-			this->stream->log(camera_device_pose_entity, ToRerunTransform(Tcv_cam_device));
-			this->logLedModel(camera_device_pose_entity, device_id, device->params.led_model, false);
+			this->logFoundPose(camera_sample, device, found_pose);
 		}
 
 		// Prior pose in this frame
 		if (device_state.Txr_world_device_prior.has_value() && camera_sample.Txr_world_cam.has_value()) {
 			std::string camera_device_prior_entity =
-			    GetCameraTrackedDevicePoseEntityName(camera_sample, device_id, true);
+			    getCameraTrackedDevicePoseEntityName(camera_sample, device_id, true);
 
 			xrt_pose Txr_cam_world;
 			math_pose_invert(&camera_sample.Txr_world_cam.value(), &Txr_cam_world);
@@ -384,7 +308,7 @@ RerunContext::logSample(const ConstellationTracker &tracker, const CameraSample 
 			xrt_pose Tcv_cam_device_prior;
 			math_pose_convert_from_opencv(&Txr_cam_device_prior, &Tcv_cam_device_prior);
 
-			this->stream->log(camera_device_prior_entity, ToRerunTransform(Tcv_cam_device_prior));
+			this->stream->log(camera_device_prior_entity, toRerunTransform(Tcv_cam_device_prior));
 			this->logLedModel(camera_device_prior_entity, device_id, device->params.led_model, true);
 		}
 
@@ -401,10 +325,10 @@ RerunContext::logImageFrame(const ConstellationTracker &tracker,
                             uint32_t camera_index,
                             const xrt_frame &frame)
 {
-	std::string camera_image_entity = GetCameraImageEntityName(mosaic_index, camera_index);
+	std::string camera_image_entity = getCameraImageEntityName(mosaic_index, camera_index);
 
 	this->stream->set_time_timestamp_nanos_since_epoch(timeline_name, frame.timestamp);
-	this->stream->log(camera_image_entity, MakeImage(frame));
+	this->stream->log(camera_image_entity, makeImage(frame));
 }
 
 }; // namespace xrt::tracking::constellation

@@ -210,7 +210,7 @@ math_vec3_f64_normalize(struct xrt_vec3_f64 *in)
 }
 
 extern "C" void
-math_vec3_f64_convert_opencv(const struct xrt_vec3_f64 *in, struct xrt_vec3_f64 *out)
+math_vec3_f64_convert_from_opencv(const struct xrt_vec3_f64 *in, struct xrt_vec3_f64 *out)
 {
 	out->x = in->x;
 	out->y = -in->y;
@@ -1030,4 +1030,13 @@ math_pose_convert_from_opencv(const struct xrt_pose *in, struct xrt_pose *out)
 	struct xrt_pose tmp;
 	math_pose_transform(&yz_flip, in, &tmp);
 	math_pose_transform(&tmp, &yz_flip, out);
+}
+
+extern "C" void
+math_space_relation_convert_from_opencv(const struct xrt_space_relation *in, struct xrt_space_relation *out)
+{
+	out->relation_flags = in->relation_flags;
+	math_pose_convert_from_opencv(&in->pose, &out->pose);
+	math_vec3_convert_from_opencv(&in->linear_velocity, &out->linear_velocity);
+	math_vec3_convert_from_opencv(&in->angular_velocity, &out->angular_velocity);
 }

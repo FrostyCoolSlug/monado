@@ -584,30 +584,9 @@ get_raw_pose(struct rift_hmd *hmd, timepoint_ns when_ns, struct xrt_relation_cha
 {
 	struct xrt_space_relation relation = XRT_SPACE_RELATION_ZERO;
 	if (hmd->use_constellation_poses) {
-		struct xrt_space_relation constellation_relation = XRT_SPACE_RELATION_ZERO;
-		timepoint_ns constellation_when_ns;
-		if (m_relation_history_get_latest(hmd->raw_constellation_relation_hist, &constellation_when_ns,
-		                                  &constellation_relation)) {
-			os_thread_helper_lock(&hmd->sensor_thread);
-
-			// @todo Some kind of accelerometer integration
-			// double gravity_correction_len;
-			// struct xrt_vec3 gravity_correction = {0, -MATH_GRAVITY_M_S2, 0};
-			// if (m_ff_f64_filter(hmd->gravity_correction, 0, when_ns, &gravity_correction_len) > 0) {
-			// 	gravity_correction.y = -gravity_correction_len;
-			// }
-
-			if (!t_apply_dead_reckoning(hmd->gyro_ff,            //
-			                            NULL,                    // hmd->accel_ff,           //
-			                            NULL,                    // &gravity_correction,     //
-			                            when_ns,                 //
-			                            &constellation_relation, //
-			                            constellation_when_ns,   //
-			                            &relation)) {
-				relation = constellation_relation;
-			}
-
-			os_thread_helper_unlock(&hmd->sensor_thread);
+		if (t_constellation_tracker_get_tracked_pose(hmd->constellation_tracker, hmd->constellation_device_id,
+		                                             when_ns, &relation) < 0) {
+			relation = XRT_C11_COMPOUND(struct xrt_space_relation) XRT_SPACE_RELATION_ZERO;
 		}
 	}
 
@@ -916,8 +895,12 @@ rift_hmd_constellation_device_push_constellation_tracker_sample(struct t_constel
 {
 	struct rift_hmd *hmd = container_of(connection, struct rift_hmd, constellation_device);
 
+	if (!sample->has_world_pose) {
+		return;
+	}
+
 	struct xrt_space_relation relation = XRT_SPACE_RELATION_ZERO;
-	relation.pose = sample->pose;
+	relation.pose = sample->world_pose;
 	relation.relation_flags = XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT |
 	                          XRT_SPACE_RELATION_ORIENTATION_VALID_BIT | XRT_SPACE_RELATION_POSITION_TRACKED_BIT |
 	                          XRT_SPACE_RELATION_POSITION_VALID_BIT;
@@ -1287,7 +1270,8 @@ rift_devices_create(struct os_hid_device *hmd_dev,
 		hmd->base.inputs[1].name = XRT_INPUT_GENERIC_HEAD_DETECT;
 	}
 	hmd->base.supported.orientation_tracking = true;
-	hmd->base.supported.position_tracking = false; // set to true once we are trying to get the sensor 6dof to work
+	// @todo Disable this when the user doesn't have sensors connected.
+	hmd->base.supported.position_tracking = true;
 	hmd->base.supported.presence = variant == RIFT_VARIANT_CV1;
 
 	// Set up display details

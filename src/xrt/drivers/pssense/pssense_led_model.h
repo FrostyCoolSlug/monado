@@ -22,7 +22,7 @@ static const struct t_constellation_tracker_led_model_match_parameters DEFAULT_M
 };
 
 //! Rotation on X axis from LED -> IMU.
-const float pssense_imu_angle = DEG_TO_RAD(50.27f);
+const float pssense_imu_angle = DEG_TO_RAD(50.2703f);
 
 //! The offset from the LED origin -> IMU origin, for the left controller
 static struct xrt_vec3 T_led_imu_left = {

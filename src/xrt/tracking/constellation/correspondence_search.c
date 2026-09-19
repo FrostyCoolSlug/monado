@@ -106,15 +106,6 @@
 
 #define MAX_LED_SEARCH_DEPTH 8
 
-static void
-undistort_blob_points(struct t_blob *blobs, int num_blobs, struct xrt_vec2 *out_points, struct camera_model *calib)
-{
-	for (int i = 0; i < num_blobs; i++) {
-		t_camera_models_undistort(&calib->calib, blobs[i].center.x, blobs[i].center.y, &out_points[i].x,
-		                          &out_points[i].y);
-	}
-}
-
 #if CHECK_ALL_PROJECTIONS
 static void
 project_led_point(struct xrt_vec3 *led_pos,
@@ -124,7 +115,7 @@ project_led_point(struct xrt_vec3 *led_pos,
 {
 	struct xrt_vec3 tmp;
 	math_pose_transform_point(pose, led_pos, &tmp);
-	t_camera_models_project(&calib->calib, tmp.x, tmp.y, tmp.z, &out_point->x, &out_point->y);
+	t_camera_models_project(&calib->calib_pinhole, tmp.x, tmp.y, tmp.z, &out_point->x, &out_point->y);
 }
 #endif
 
@@ -489,12 +480,12 @@ check_led_against_model_subset(struct correspondence_search *cs,
 			struct xrt_vec2 reprojected;
 
 			project_led_point(&model_leds[p]->position, &pose, cs->calib, &reprojected);
-			double xdiff = reprojected.x - blobs[p]->blob->center.x;
-			double ydiff = reprojected.y - blobs[p]->blob->center.y;
+			double xdiff = reprojected.x - blobs[p]->blob->center_undistorted.x;
+			double ydiff = reprojected.y - blobs[p]->blob->center_undistorted.y;
 
 			CS_DEBUG(cs, "Blob %d @ %f,%f should match LED %d projection %f %f (err %f)", p,
-			         blobs[p]->blob->center.x, blobs[p]->blob->center.y, model_leds[p]->id, reprojected.x,
-			         reprojected.y, sqrt(xdiff * xdiff + ydiff * ydiff));
+			         blobs[p]->blob->center_undistorted.x, blobs[p]->blob->center_undistorted.y,
+			         model_leds[p]->id, reprojected.x, reprojected.y, sqrt(xdiff * xdiff + ydiff * ydiff));
 #else
 			break;
 #endif
@@ -830,17 +821,18 @@ search_pose_for_model(struct correspondence_search *cs, struct cs_model_info *mi
 		anchor->num_neighbours = out_index;
 
 		CS_FULL_LOG(cs, "Model %d, blob %d @ %f,%f neighbours %d Search list:", mi->id, b,
-		            anchor->blob->center.x, anchor->blob->center.y, anchor->num_neighbours);
+		            anchor->blob->center_undistorted.x, anchor->blob->center_undistorted.y,
+		            anchor->num_neighbours);
 		for (int i = 0; i < anchor->num_neighbours; i++) {
 			struct cs_image_point *p1 = anchor->neighbours[i];
-			double dist = (p1->blob->center.y - anchor->blob->center.y) *
-			                  (p1->blob->center.y - anchor->blob->center.y) +
-			              (p1->blob->center.x - anchor->blob->center.x) *
-			                  (p1->blob->center.x - anchor->blob->center.x);
+			double dist = (p1->blob->center_distorted.y - anchor->blob->center_distorted.y) *
+			                  (p1->blob->center_distorted.y - anchor->blob->center_distorted.y) +
+			              (p1->blob->center_distorted.x - anchor->blob->center_distorted.x) *
+			                  (p1->blob->center_distorted.x - anchor->blob->center_distorted.x);
 			(void)dist; // Silence unused variable warning when not logging
 			CS_FULL_LOG(cs, "\tLED ID %u (%f,%f) @ %f,%f. Dist %f", p1->blob->matched_device_led_id,
-			            p1->point_homog[0], p1->point_homog[1], p1->blob->center.x, p1->blob->center.y,
-			            sqrt(dist));
+			            p1->point_homog[0], p1->point_homog[1], p1->blob->center_distorted.x,
+			            p1->blob->center_distorted.y, sqrt(dist));
 		}
 	}
 
@@ -895,7 +887,6 @@ correspondence_search_free(struct correspondence_search *cs)
 void
 correspondence_search_set_blobs(struct correspondence_search *cs, struct t_blob *blobs, int num_blobs)
 {
-	struct xrt_vec2 undistorted_points[XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME];
 	struct cs_image_point *blob_list[XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME];
 
 	assert(num_blobs <= XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME);
@@ -909,30 +900,28 @@ correspondence_search_set_blobs(struct correspondence_search *cs, struct t_blob 
 	cs->num_points = num_blobs;
 	cs->blobs = blobs;
 
-	// Undistort points so we can project / match properly
-	undistort_blob_points(blobs, num_blobs, undistorted_points, cs->calib);
-
 	CS_DUMP_BLOBS(cs, "Building blobs search array");
 	for (int i = 0; i < num_blobs; i++) {
 		struct cs_image_point *p = cs->points + i;
 		struct t_blob *b = blobs + i;
 
-		p->point_homog[0] = undistorted_points[i].x;
-		p->point_homog[1] = undistorted_points[i].y;
-		p->point_homog[2] = 1;
+		p->point_homog[0] = b->center_homogenized.x;
+		p->point_homog[1] = b->center_homogenized.y;
+		p->point_homog[2] = b->center_homogenized.z;
 
-		p->size[0] = b->size.x / cs->calib->calib.fx;
-		p->size[1] = b->size.y / cs->calib->calib.fy;
+		p->size[0] = b->size.x / cs->calib->calib_pinhole.fx;
+		p->size[1] = b->size.y / cs->calib->calib_pinhole.fy;
 		p->max_dist = sqrt(p->size[0] * p->size[0] + p->size[1] * p->size[1]);
 
 		p->blob = b;
 		blob_list[i] = p;
 
 		CS_DUMP_BLOBS(cs, "Blob %u = (%f,%f %fx%f) -> (%f, %f) %f x %f (homog (%f, %f) %f x %f) (LED id %d)", i,
-		              b->center.x, b->center.y, b->size.x, b->size.y, p->point_homog[0] * cs->calib->calib.fx,
-		              p->point_homog[1] * cs->calib->calib.fy, p->size[0] * cs->calib->calib.fx,
-		              p->size[1] * cs->calib->calib.fy, p->point_homog[0], p->point_homog[1], p->size[0],
-		              p->size[1], b->matched_device_led_id);
+		              b->center_undistorted.x, b->center_undistorted.y, b->size.x, b->size.y,
+		              p->point_homog[0] * cs->calib->calib_pinhole.fx,
+		              p->point_homog[1] * cs->calib->calib_pinhole.fy, p->size[0] * cs->calib->calib_pinhole.fx,
+		              p->size[1] * cs->calib->calib_pinhole.fy, p->point_homog[0], p->point_homog[1],
+		              p->size[0], p->size[1], b->matched_device_led_id);
 	}
 
 	// Now the blob_list is populated, loop over the blob list and for each,

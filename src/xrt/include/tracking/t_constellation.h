@@ -20,6 +20,12 @@ typedef int8_t t_constellation_device_id_t;
 typedef int8_t t_constellation_led_id_it;
 
 #define XRT_CONSTELLATION_MAX_BLOBS_PER_FRAME 250
+/*!
+ * The maximum amount of devices the constellation tracker is able to track at once.
+ *
+ * @note This value is dictated by the device bitmask in the sensor fusion, update that there when this is changed to
+ *       another power of two.
+ */
 #define XRT_CONSTELLATION_MAX_DEVICES 4
 
 /*!
@@ -62,24 +68,29 @@ struct t_blob
 	 */
 	t_constellation_led_id_it matched_device_led_id;
 
-	//! Centre of blob
-	struct xrt_vec2 center;
+	//! Centre of blob, in distorted pixels
+	struct xrt_vec2 center_distorted;
+
+	//! Center of blob, in undistorted pixels
+	struct xrt_vec2 center_undistorted;
+
+	//! Center of blob, in homogenized coordinates
+	struct xrt_vec3 center_homogenized;
 
 	/*!
-	 * Estimated motion vector of blob, in pixels per second. Only valid if the tracking system
+	 * Estimated motion vector of blob, in distorted pixels per second. Only valid if the tracking system
 	 * provides it.
 	 */
 	struct xrt_vec2 motion_vector;
 
-	//! The bounding box of the blob in pixel coordinates.
+	//! The bounding box of the blob in distorted pixel coordinates.
 	struct xrt_rect bounding_box;
 
-	//! The size of the blob, in pixels. May be {0,0}, and may be subpixel accurate.
+	//! The size of the blob, in distorted pixels. May be {0,0}, and may be subpixel accurate.
 	struct xrt_vec2 size;
 
 	/*!
-	 * The brightness of the brightest pixel of the blob, on a scale from 0.0 (black) to 1.0 (pure white).
-	 * Set to 1.0 for non-brightness-aware blobwatches.
+	 * The brightness of the blob, from 0-1, taken by dividing the greysum over it's area.
 	 */
 	float brightness;
 };
@@ -93,6 +104,9 @@ struct t_blob_observation
 	 * to know this.
 	 */
 	uint64_t id;
+
+	//! The sequence ID of this mosaic, must be stable across all frames of a mosaic. Monotonically increases.
+	uint64_t sequence_id;
 
 	int64_t timestamp_ns;
 	struct t_blob *blobs;
@@ -335,20 +349,43 @@ struct t_constellation_tracker_sample_metrics
 	double reprojection_error;
 };
 
+struct t_constellation_tracker_observed_led
+{
+	//! Whether the LED was observed in this sample.
+	bool observed;
+	//! The observed brightness of the LED, taken by dividing the greysum by the blob's area.
+	float brightness;
+	//! The facing dot product of the LED.
+	float facing_dot;
+};
+
 struct t_constellation_tracker_sample
 {
 	//! The time the original blobservation was made.
 	int64_t timestamp_ns;
+	//! The sequence ID of the mosaic
+	uint64_t sequence_id;
+	/*!
+	 * Whether the `world_pose` field is valid or not.
+	 *
+	 * In certain cases, cameras are able to observe a device without themselves knowing where they are yet.
+	 */
+	bool has_world_pose;
 	//! The pose of the device at the time of the blobservation.
-	struct xrt_pose pose;
+	struct xrt_pose world_pose;
 	//! The mosaic index of the camera that made the blobservation in question.
 	size_t mosaic_index;
 	//! The index of the camera in the mosaic that made the blobservation in question.
 	size_t camera_index;
-	//! Average brightness of the detected blobs, from 0 (black) to 1 (pure white).
+	/*!
+	 * Average brightness of the detected blobs, from 0 (black) to 1 (pure white).
+	 * This is the averaged greysum of all LEDs.
+	 */
 	float average_brightness;
 	//! Metrics about the sample, such as reprojection error and matched LED count.
 	struct t_constellation_tracker_sample_metrics metrics;
+	//! The LEDs that were observed in this solve.
+	struct t_constellation_tracker_observed_led leds[XRT_CONSTELLATION_MAX_LEDS_PER_DEVICE];
 };
 
 /*!

@@ -9,12 +9,11 @@
 
 #pragma once
 
-#include "xrt/xrt_config_build.h"
-
 // @note In general usage, we don't use the internal header, rerun is an opt-in debugging feature, so we are OK using
 //       internal APIs here to keep code clean and non-invasive. Please look at target_builder_rift.c instead for normal
 //       usage of these APIs.
 #include "t_constellation_tracker_internal.hpp"
+#include "constellation_rerun_common.hpp"
 
 #include <rerun.hpp>
 
@@ -23,16 +22,10 @@ namespace xrt::tracking::constellation {
 
 const std::string rerun_recording_id = "constellation_tracking";
 
-struct RerunContext
+struct RerunContext : public RerunStream
 {
-public: // Fields
-	std::unique_ptr<rerun::RecordingStream> stream{};
-
 public: // Methods
-	RerunContext()
-	{
-		stream = std::make_unique<rerun::RecordingStream>(rerun_recording_id);
-	}
+	RerunContext() : RerunStream(rerun_recording_id) {}
 
 	/*!
 	 * Log a camera sample to rerun.
@@ -76,6 +69,11 @@ private: // Methods
 
 	void
 	logFrameDeviceMetrics(const CameraSample &camera_sample, const DeviceState &device_state);
+
+	void
+	logFoundPose(const CameraSample &camera_sample,
+	             const std::unique_ptr<Device> &device,
+	             const FoundDevicePose &found_pose);
 };
 
 }; // namespace xrt::tracking::constellation
