@@ -79,6 +79,9 @@
 #define RIFT_LED_SIZE_M 0.0035f                   // 3.5mm
 #define RIFT_LED_VISIBILITY_RAD DEG_TO_RAD(90.0f) // TODO: tune this value properly
 
+#define RIFT_LED_SIZE_M 0.0035f                   // 3.5mm
+#define RIFT_LED_VISIBILITY_RAD DEG_TO_RAD(90.0f) // TODO: tune this value properly
+
 #ifdef __cplusplus
 extern "C" {
 #endif

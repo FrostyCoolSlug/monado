@@ -92,6 +92,9 @@ rift_hmd_frame_timestamp_callback(void *user_data,             //
 int
 rift_add_to_constellation_tracker(struct rift_hmd *hmd, struct t_constellation_tracker *tracker);
 
+int
+touch_controller_add_to_constellation_tracker(struct xrt_device *xdev, struct t_constellation_tracker *tracker);
+
 /*!
  * Gets the HMD's timing event source.
  *

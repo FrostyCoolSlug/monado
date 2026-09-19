@@ -1551,23 +1551,23 @@ rift_add_to_constellation_tracker(struct rift_hmd *hmd, struct t_constellation_t
 	hmd->use_constellation_poses = true;
 
 	os_mutex_lock(&hmd->device_mutex);
-	for (int i = 0; i < RADIO_STATE_TOUCH_CONTROLLERS_LEN; ++i) {
+	for (int i = 0; i < hmd->device_count; ++i) {
 
-		// just add controllers to constellation tracker
-		if (hmd->radio_state.touch_controllers[i] == NULL ||
-		    hmd->radio_state.touch_controllers[i]->device_type == RIFT_RADIO_DEVICE_TRACKED_OBJECT) {
+		// only add touch controllers to constellation tracker (rift remote is any_hand controller)
+		if (hmd->devices[i]->device_type != XRT_DEVICE_TYPE_LEFT_HAND_CONTROLLER &&
+		    hmd->devices[i]->device_type != XRT_DEVICE_TYPE_RIGHT_HAND_CONTROLLER) {
 			continue;
 		}
 
-		struct rift_touch_controller *controller = hmd->radio_state.touch_controllers[i];
+		struct rift_touch_controller *controller =
+		    container_of(hmd->devices[i], struct rift_touch_controller, base);
 		if (!controller->input.calibration_read) {
 			continue;
 		}
 
 		struct t_constellation_tracker_device_params controller_params = {
 		    .led_model = controller->input.calibration.led_model,
-		    .tracking_source = &controller->constellation_tracking_source,
-		};
+		    .tracking_source = &controller->constellation_tracking_source};
 
 		controller->constellation_tracker = tracker;
 
@@ -1580,7 +1580,6 @@ rift_add_to_constellation_tracker(struct rift_hmd *hmd, struct t_constellation_t
 		}
 
 		controller->base.tracking_origin = tracking_origin;
-		controller->constellation_imu_sink = controller_params.imu_sink;
 
 		controller->use_constellation = true;
 	}
