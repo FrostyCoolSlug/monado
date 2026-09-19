@@ -91,6 +91,18 @@ struct t_constellation_tracker_device_params
 	 * to the constellation tracker, drivers should send IMU samples to this sink.
 	 */
 	struct xrt_imu_sink *imu_sink;
+
+	/*!
+	 * The longest, in nanoseconds, that the sensor fusion may extrapolate this device's pose from the IMU alone
+	 * after a camera last constrained it.
+	 *
+	 * Past this the pose is held where it had got to (velocities zeroed, and the pose flagged as no longer tracked)
+	 * instead of continuing to integrate. Double-integrating an accelerometer diverges within a second or two, so
+	 * this matters for anything that regularly leaves the cameras' view, such as a hand controller.
+	 *
+	 * Zero means no limit, which is how a device that stays in view (a headset) behaves.
+	 */
+	int64_t max_dead_reckoning_ns;
 };
 
 enum t_constellation_tracker_flags

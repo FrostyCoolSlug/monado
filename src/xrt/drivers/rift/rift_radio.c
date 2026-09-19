@@ -35,6 +35,68 @@ rift_update_input(struct xrt_device *device, size_t index, union xrt_input_value
  * Rift Touch Controller device functions
  */
 
+/*!
+ * Gets the pose of the controller's LED model frame, which is centred on its IMU, in the tracking origin.
+ *
+ * Prefers the constellation tracker's sensor fusion, which merges every camera and the IMU into one smooth pose. Until
+ * the fusion has located the controller, this falls back on the latest raw per camera pose. Those are noisier, and
+ * disagree with each other by a little, so they are only ever a stopgap.
+ *
+ * @param[out] out_relation The relation, which is not touched if this returns false.
+ * @param[out] out_is_fused Whether the relation came from the sensor fusion.
+ *
+ * @return false if the controller has not been located by the constellation tracker at all.
+ */
+static bool
+touch_controller_get_model_relation(struct rift_touch_controller *controller,
+                                    timepoint_ns when_ns,
+                                    struct xrt_space_relation *out_relation,
+                                    bool *out_is_fused)
+{
+	if (xrt_atomic_s32_load(&controller->use_constellation) == 0) {
+		return false;
+	}
+
+	const enum xrt_space_relation_flags pose_flags =
+	    XRT_SPACE_RELATION_POSITION_VALID_BIT | XRT_SPACE_RELATION_ORIENTATION_VALID_BIT;
+
+	struct xrt_space_relation relation = XRT_SPACE_RELATION_ZERO;
+	bool is_fused = false;
+
+	if (t_constellation_tracker_get_tracked_pose(controller->constellation_tracker,
+	                                             controller->constellation_device_id, when_ns, &relation) == 0 &&
+	    (relation.relation_flags & pose_flags) == pose_flags) {
+		is_fused = true;
+	} else {
+		relation = (struct xrt_space_relation)XRT_SPACE_RELATION_ZERO;
+		m_relation_history_get(controller->constellation_relation_history, when_ns, &relation);
+		if ((relation.relation_flags & pose_flags) != pose_flags) {
+			return false;
+		}
+	}
+
+	// Log when we change where the pose is coming from, which is very useful to know when trying to work out why
+	// a controller is shaky.
+	int32_t source = is_fused ? 1 : 2;
+	int32_t previous_source = xrt_atomic_s32_load(&controller->constellation_pose_source);
+	if (previous_source != source) {
+		xrt_atomic_s32_store(&controller->constellation_pose_source, source);
+
+		if (previous_source == 0 && is_fused) {
+			HMD_INFO(controller->hmd, "Controller %d is now using the sensor fusion pose",
+			         controller->device_type);
+		} else if (previous_source != 0) {
+			HMD_DEBUG(controller->hmd, "Controller %d switched to %s poses", controller->device_type,
+			          is_fused ? "sensor fusion" : "raw per camera");
+		}
+	}
+
+	*out_relation = relation;
+	*out_is_fused = is_fused;
+
+	return true;
+}
+
 static xrt_result_t
 rift_touch_controller_get_tracked_pose(struct xrt_device *xdev,
                                        const enum xrt_input_name name,
@@ -73,6 +135,31 @@ rift_touch_controller_get_tracked_pose(struct xrt_device *xdev,
 
 	m_relation_chain_push_pose(&xrc, &pose_offset);
 
+	struct xrt_space_relation model_relation = XRT_SPACE_RELATION_ZERO;
+	bool is_fused = false;
+	if (touch_controller_get_model_relation(controller, at_timestamp_ns, &model_relation, &is_fused)) {
+		if (!is_fused) {
+			// The raw poses have no velocity, so borrow the angular velocity from the IMU.
+			struct xrt_quat imu_orientation;
+			struct xrt_vec3 imu_angular_velocity;
+			if (imu_fusion_get_prediction(controller->input.imu_fusion, (uint64_t)at_timestamp_ns,
+			                              &imu_orientation, &imu_angular_velocity) == 0) {
+				model_relation.angular_velocity = imu_angular_velocity;
+				model_relation.relation_flags |= XRT_SPACE_RELATION_ANGULAR_VELOCITY_VALID_BIT;
+			}
+		}
+
+		// What we were given is the pose of the model frame, but the grip and aim poses are defined relative to
+		// the base frame.
+		m_relation_chain_push_pose(&xrc, &controller->input.calibration.T_imu_base);
+		(*m_relation_chain_reserve(&xrc)) = model_relation;
+
+		m_relation_chain_resolve(&xrc, out_relation);
+
+		return XRT_SUCCESS;
+	}
+
+	// The constellation tracker hasn't found us (yet), so all we have is the orientation from the IMU.
 	struct xrt_space_relation *relation = m_relation_chain_reserve(&xrc);
 
 	if (imu_fusion_get_prediction(controller->input.imu_fusion, (uint64_t)at_timestamp_ns,
@@ -80,18 +167,6 @@ rift_touch_controller_get_tracked_pose(struct xrt_device *xdev,
 		relation->relation_flags = XRT_SPACE_RELATION_ORIENTATION_VALID_BIT |
 		                           XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT |
 		                           XRT_SPACE_RELATION_ANGULAR_VELOCITY_VALID_BIT;
-
-		if (controller->use_constellation) {
-			// borrow the angular velocity from the IMU, but just use the constellation position and
-			// orientation
-			struct xrt_vec3 ang_vel = relation->angular_velocity;
-			m_relation_history_get(controller->constellation_relation_history, at_timestamp_ns, relation);
-			relation->angular_velocity = ang_vel;
-			relation->relation_flags =
-			    XRT_SPACE_RELATION_POSITION_VALID_BIT | XRT_SPACE_RELATION_POSITION_TRACKED_BIT |
-			    XRT_SPACE_RELATION_ORIENTATION_VALID_BIT | XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT |
-			    XRT_SPACE_RELATION_ANGULAR_VELOCITY_VALID_BIT;
-		}
 	}
 
 	m_relation_chain_resolve(&xrc, out_relation);
@@ -110,7 +185,12 @@ touch_controller_constellation_tracking_source_get_tracked_pose(
 
 	*out_relation = (struct xrt_space_relation)XRT_SPACE_RELATION_ZERO;
 
-	m_relation_history_get(controller->constellation_relation_history, when_ns, out_relation);
+	// This is the tracker asking where we think the controller is, so it can look there first. It has to be
+	// the pose of the model frame, since that's what the tracker solves for.
+	bool is_fused;
+	if (!touch_controller_get_model_relation(controller, when_ns, out_relation, &is_fused)) {
+		*out_relation = (struct xrt_space_relation)XRT_SPACE_RELATION_ZERO;
+	}
 }
 
 static void
@@ -397,6 +477,11 @@ touch_controller_constellation_device_push_constellation_tracker_sample(
 	struct rift_touch_controller *controller =
 	    container_of(connection, struct rift_touch_controller, constellation_device);
 
+	// Without a world pose (the cameras aren't placed in the room yet) this would be a made up identity pose.
+	if (!sample->has_world_pose) {
+		return;
+	}
+
 	struct xrt_space_relation relation = XRT_SPACE_RELATION_ZERO;
 	relation.pose = sample->world_pose;
 	relation.relation_flags = XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT |
@@ -448,7 +533,8 @@ rift_touch_controller_create(struct rift_hmd *hmd,
 
 	m_relation_history_create(&controller->constellation_relation_history);
 
-	controller->use_constellation = false;
+	xrt_atomic_s32_store(&controller->use_constellation, 0);
+	xrt_atomic_s32_store(&controller->constellation_pose_source, 0);
 	controller->constellation_tracking_source.get_tracked_pose =
 	    touch_controller_constellation_tracking_source_get_tracked_pose;
 	controller->constellation_device.push_constellation_tracker_sample =
@@ -1004,7 +1090,13 @@ rift_touch_controller_handle_radio_input_report(struct rift_hmd *hmd,
 
 	os_mutex_lock(&controller->constellation_mutex);
 	if (controller->constellation_imu_sink) {
-		xrt_sink_push_imu(controller->constellation_imu_sink, &imu_sample);
+		// The sensor fusion searches its IMU buffer assuming timestamps only ever go up, and the clock skew
+		// tracker can nudge our converted timestamps backwards a little. One out of order sample would silently
+		// cut short every window that spans it, so drop those, as the HMD does.
+		if (imu_sample.timestamp_ns > controller->constellation_last_imu_ns) {
+			xrt_sink_push_imu(controller->constellation_imu_sink, &imu_sample);
+			controller->constellation_last_imu_ns = imu_sample.timestamp_ns;
+		}
 	}
 	os_mutex_unlock(&controller->constellation_mutex);
 

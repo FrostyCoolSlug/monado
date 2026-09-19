@@ -1567,21 +1567,34 @@ rift_add_to_constellation_tracker(struct rift_hmd *hmd, struct t_constellation_t
 
 		struct t_constellation_tracker_device_params controller_params = {
 		    .led_model = controller->input.calibration.led_model,
-		    .tracking_source = &controller->constellation_tracking_source};
+		    .tracking_source = &controller->constellation_tracking_source,
+		    // Unlike the HMD, controllers are often out of the cameras' view.
+		    .max_dead_reckoning_ns = RIFT_TOUCH_CONTROLLER_MAX_DEAD_RECKONING_NS,
+		};
 
-		controller->constellation_tracker = tracker;
-
+		t_constellation_device_id_t controller_device_id;
 		ret = t_constellation_tracker_add_device(tracker, &controller_params, &controller->constellation_device,
-		                                         &controller->constellation_device_id);
+		                                         &controller_device_id);
 		if (ret < 0) {
 			HMD_ERROR(hmd, "Failed to add Oculus Touch controller to constellation tracker, reason %d",
 			          ret);
 			continue;
 		}
 
+		// Only now that the controller is really in the tracker is it safe to record it as such, otherwise a
+		// failed add above would leave us removing some other device (ID 0 is the HMD) when torn down.
+		os_mutex_lock(&controller->constellation_mutex);
+		controller->constellation_tracker = tracker;
+		controller->constellation_device_id = controller_device_id;
+		// Without this the fusion never sees a single IMU sample from the controller.
+		controller->constellation_imu_sink = controller_params.imu_sink;
+		controller->constellation_last_imu_ns = 0;
+		os_mutex_unlock(&controller->constellation_mutex);
+
 		controller->base.tracking_origin = tracking_origin;
 
-		controller->use_constellation = true;
+		// Last, this is what lets other threads read the fields above.
+		xrt_atomic_s32_store(&controller->use_constellation, 1);
 	}
 	os_mutex_unlock(&hmd->device_mutex);
 

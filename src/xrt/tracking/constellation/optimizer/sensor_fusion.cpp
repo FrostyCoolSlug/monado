@@ -2370,6 +2370,17 @@ void
 Device::reset()
 {
 	this->led_model = nullptr;
+	this->max_dead_reckoning_ns = 0;
+
+	/*
+	 * The last solve belonged to whichever device held this slot before. Left alone, a device that is registered
+	 * into a used slot (a controller power-cycling, say) would be handed the previous occupant's pose to
+	 * dead-reckon from until its own first solve, and the constructor would leave these uninitialized.
+	 */
+	this->has_latest_solve = false;
+	this->latest_solve_time_ns = 0;
+	this->Tcv_world_device_latest = XRT_POSE_IDENTITY;
+	this->latest_world_velocity = {0.0, 0.0, 0.0};
 
 	m_relation_history_clear(this->relation_history);
 
@@ -2855,7 +2866,9 @@ SensorFusion::addCamera(const CameraDescription &camera_description)
 }
 
 void
-SensorFusion::addDevice(t_constellation_device_id_t id, const t_constellation_tracker_led_model *led_model)
+SensorFusion::addDevice(t_constellation_device_id_t id,
+                        const t_constellation_tracker_led_model *led_model,
+                        int64_t max_dead_reckoning_ns)
 {
 	assert(id != XRT_CONSTELLATION_INVALID_DEVICE_ID);
 
@@ -2893,6 +2906,7 @@ SensorFusion::addDevice(t_constellation_device_id_t id, const t_constellation_tr
 	// Set the slot up before anything can find it.
 	device.reset();
 	device.led_model = led_model;
+	device.max_dead_reckoning_ns = max_dead_reckoning_ns;
 
 	/*
 	 * Release, pairing with the acquire in pushImuSample(): a thread that finds this ID is guaranteed to see a slot
@@ -3222,12 +3236,26 @@ SensorFusion::getTrackedPose(t_constellation_device_id_t device_id,
 		xrt_vec3_f64 gyro_bias = device.latest_gyro_bias;
 		xrt_vec3_f64 accel_scale = device.latest_accel_scale;
 		xrt_quat Qcv_imu_model = device.Qcv_imu_model;
+		const int64_t max_dead_reckoning_ns = device.max_dead_reckoning_ns;
 
 		os_thread_helper_unlock(&this->thread);
 
+		/*
+		 * Nothing has constrained this device for longer than it is allowed to be extrapolated for, so stop
+		 * integrating where that allowance ran out and hold the pose there.
+		 *
+		 * The unlimited case (a limit of zero) is deliberately left exactly as it was.
+		 */
+		timepoint_ns integrate_until_ns = requested_time_ns;
+		bool holding = false;
+		if (max_dead_reckoning_ns > 0 && requested_time_ns - latest_solve_time_ns > max_dead_reckoning_ns) {
+			integrate_until_ns = latest_solve_time_ns + max_dead_reckoning_ns;
+			holding = true;
+		}
+
 		bool integrate_to = true;
 
-		if (requested_time_ns <= latest_solve_time_ns) {
+		if (integrate_until_ns <= latest_solve_time_ns) {
 			SF_TRACE(this, "Requested time is before our latest sample, can't work backwards.");
 			integrate_to = false;
 		}
@@ -3240,7 +3268,7 @@ SensorFusion::getTrackedPose(t_constellation_device_id_t device_id,
 			xrt_imu_sample raw_first_after;
 			const ImuCollectResult result = collectImuSamplesForRange(device,               //
 			                                                          latest_solve_time_ns, //
-			                                                          requested_time_ns,    //
+			                                                          integrate_until_ns,   //
 			                                                          samples_buf,          //
 			                                                          num_samples,          //
 			                                                          raw_first_after);     //
@@ -3280,8 +3308,8 @@ SensorFusion::getTrackedPose(t_constellation_device_id_t device_id,
 
 			SF_TRACE(this, "Used dead reckoning for pose at ts %" PRIi64, requested_time_ns);
 		} else {
-			m_relation_history_get(device.relation_history, requested_time_ns, &out_relation);
-			out_time_ns = requested_time_ns;
+			m_relation_history_get(device.relation_history, integrate_until_ns, &out_relation);
+			out_time_ns = integrate_until_ns;
 
 			SF_TRACE(this, "Used relation history for pose at ts %" PRIi64, requested_time_ns);
 		}
@@ -3292,6 +3320,23 @@ SensorFusion::getTrackedPose(t_constellation_device_id_t device_id,
 		math_pose_convert_from_opencv(&out_relation.pose, &out_relation.pose);
 		math_vec3_convert_from_opencv(&out_relation.linear_velocity, &out_relation.linear_velocity);
 		math_vec3_convert_from_opencv(&out_relation.angular_velocity, &out_relation.angular_velocity);
+
+		if (holding) {
+			/*
+			 * Held, so there is no motion to report and the caller must not predict any: `out_time_ns` is
+			 * moved to the requested time so the tracker's forward prediction spans zero seconds. It is also no
+			 * longer being tracked, and says so.
+			 */
+			out_relation.linear_velocity = XRT_VEC3_ZERO;
+			out_relation.angular_velocity = XRT_VEC3_ZERO;
+			out_relation.relation_flags = static_cast<xrt_space_relation_flags>(
+			    out_relation.relation_flags &
+			    ~(XRT_SPACE_RELATION_POSITION_TRACKED_BIT | XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT |
+			      XRT_SPACE_RELATION_LINEAR_VELOCITY_VALID_BIT | XRT_SPACE_RELATION_ANGULAR_VELOCITY_VALID_BIT));
+			out_time_ns = requested_time_ns;
+
+			SF_DEBUG(this, "Device %d is past its dead reckoning limit, holding its pose.", device_id);
+		}
 
 		SF_TRACE(this,
 		         "Pose get from %" PRIi64 " to %" PRIi64

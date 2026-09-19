@@ -120,24 +120,49 @@ rift_touch_calibration_parse(const char *calibration_data,
 			led.id = i;
 		}
 
-		struct xrt_vec3 unit_x = XRT_VEC3_UNIT_X;
-		struct xrt_pose led_to_base = XRT_POSE_IDENTITY;
+		/*
+		 * The constellation tracker's sensor fusion tracks the IMU, and only accounts for a rotation between the
+		 * IMU and the LED model, never a translation. So the LED model handed to it has to be centred on the IMU,
+		 * with the same axes as the IMU.
+		 *
+		 * The rest of the driver, though, thinks in terms of a "base" frame: the grip and aim poses are defined
+		 * relative to it. Rather than bake that into the LEDs, keep it as the fixed transform @ref
+		 * rift_touch_controller_calibration::T_imu_base and apply it to the tracked pose afterwards.
+		 */
+		struct xrt_vec3 imu_position = out_calibration->imu_position;
 
-		// Offset the LEDs relative to the led model origin in order to make our grip pose and aim pose values
-		// work nicely
-		led_to_base.position.x = 0.0f;
-		led_to_base.position.y = -0.049424f;
-		led_to_base.position.z = 0.02826f;
-		math_quat_from_angle_vector(DEG_TO_RAD(-45.0f), &unit_x, &led_to_base.orientation);
+		// A controller is a few centimeters across. Anything larger means this isn't in the same units and frame
+		// as the model points, and applying it would fling the LEDs across the room, so it is better ignored.
+		if (m_vec3_len(imu_position) > 0.5f) {
+			U_LOG_W("Touch controller IMU position (%f, %f, %f) is implausible, assuming it is at the origin.",
+			        (double)imu_position.x, (double)imu_position.y, (double)imu_position.z);
+			imu_position = {0.0f, 0.0f, 0.0f};
+			out_calibration->imu_position = imu_position;
+		}
 
 		for (size_t i = 0; i < out_calibration->led_model.led_count; i++) {
-			math_vec3_accum(&led_to_base.position, &out_calibration->led_model.leds[i].position);
-			math_quat_rotate_vec3(&led_to_base.orientation, &out_calibration->led_model.leds[i].position,
-			                      &out_calibration->led_model.leds[i].position);
-			math_quat_rotate_vec3(&led_to_base.orientation, &out_calibration->led_model.leds[i].normal,
-			                      &out_calibration->led_model.leds[i].normal);
-			math_vec3_normalize(&out_calibration->led_model.leds[i].normal);
+			out_calibration->led_model.leds[i].position =
+			    m_vec3_sub(out_calibration->led_model.leds[i].position, imu_position);
 		}
+
+		/*
+		 * Where the base frame sits, relative to the model frame the calibration file gave us. Its origin is
+		 * offset from the model origin, and it is tilted, in order to make our grip pose and aim pose values
+		 * work nicely.
+		 *
+		 * A point p in the calibration file's frame is at R * (p + base_offset) in the base frame, and the model
+		 * frame is that file frame shifted so the IMU is at its origin.
+		 */
+		struct xrt_vec3 unit_x = XRT_VEC3_UNIT_X;
+		struct xrt_vec3 base_offset = {0.0f, -0.049424f, 0.02826f};
+
+		struct xrt_pose T_base_imu = XRT_POSE_IDENTITY;
+		math_quat_from_angle_vector(DEG_TO_RAD(-45.0f), &unit_x, &T_base_imu.orientation);
+
+		struct xrt_vec3 offset_from_imu = m_vec3_add(base_offset, imu_position);
+		math_quat_rotate_vec3(&T_base_imu.orientation, &offset_from_imu, &T_base_imu.position);
+
+		math_pose_invert(&T_base_imu, &out_calibration->T_imu_base);
 
 	} catch (const std::exception &e) {
 		U_LOG_E("Exception while parsing touch controller calibration JSON: %s", e.what());

@@ -53,6 +53,13 @@
 #define RIFT_USB_LATENCY_BIAS (U_TIME_1US_IN_NS * 200LL) // 200us latency bias over USB
 #define RIFT_RADIO_LATENCY_BIAS (U_TIME_1MS_IN_NS * 4LL) // 4ms bias over radio
 
+/*!
+ * How long a touch controller's pose may be extrapolated from its IMU alone once the cameras stop seeing it, before
+ * the sensor fusion holds it still instead. Controllers spend a lot of time out of view (behind the back, below the
+ * cameras' field of view), and dead-reckoned position diverges within a second or two.
+ */
+#define RIFT_TOUCH_CONTROLLER_MAX_DEAD_RECKONING_NS (U_TIME_1MS_IN_NS * 500LL)
+
 #define CALIBRATION_HASH_BYTE_OFFSET 0x1bf0
 #define CALIBRATION_HASH_BYTE_LENGTH 0x10
 
@@ -713,6 +720,16 @@ struct rift_touch_controller_calibration
 
 	struct xrt_vec3 imu_position;
 
+	/*!
+	 * The pose of the controller's "base" frame, the one the grip and aim poses are defined in, expressed in the
+	 * frame of @ref led_model.
+	 *
+	 * @ref led_model is centred on the IMU and shares its axes, which is what the sensor fusion needs (it tracks the
+	 * IMU, and only models a rotation between the IMU and the LEDs, not an offset). Multiply the tracked pose of that
+	 * frame by this to get the pose of the base frame.
+	 */
+	struct xrt_pose T_imu_base;
+
 	struct t_constellation_tracker_led_model led_model;
 };
 
@@ -744,7 +761,19 @@ struct rift_touch_controller
 
 	enum rift_radio_device_type device_type;
 
-	bool use_constellation;
+	/*!
+	 * Non-zero once the controller has been added to the constellation tracker. Set last, after the fields below
+	 * are filled in, and checked before anything below is read from a thread other than the one that set it up.
+	 */
+	xrt_atomic_s32_t use_constellation;
+
+	/*!
+	 * Whether the pose being handed out is from the sensor fusion (1), or from the raw per camera samples (2)
+	 * because the fusion has nothing yet. 0 until the first pose has been asked for. Only for diagnostics.
+	 */
+	xrt_atomic_s32_t constellation_pose_source;
+
+	//! The latest raw, per camera pose. This is a fallback for while the sensor fusion has nothing to offer.
 	struct m_relation_history *constellation_relation_history;
 
 	bool constellation_mutex_created;
@@ -754,7 +783,10 @@ struct rift_touch_controller
 	struct t_constellation_tracker_device constellation_device;
 	struct t_constellation_tracker_tracking_source constellation_tracking_source;
 	t_constellation_device_id_t constellation_device_id;
+
 	struct xrt_imu_sink *constellation_imu_sink;
+	//! The timestamp of the last IMU sample given to @ref constellation_imu_sink, which has to strictly ascend.
+	timepoint_ns constellation_last_imu_ns;
 
 	struct
 	{

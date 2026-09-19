@@ -340,6 +340,12 @@ public: // Fields
 	//! The IMU -> constellation offset
 	xrt_quat Qcv_imu_model;
 
+	/*!
+	 * How long @ref SensorFusion::getTrackedPose may dead-reckon past the latest solve before it holds the pose
+	 * instead. Zero means no limit. Set once when the device is registered, before its ID is published.
+	 */
+	int64_t max_dead_reckoning_ns;
+
 	//! Where this device is in its lifecycle. Only touched with the fusion lock held.
 	DeviceTrackingState tracking_state;
 
@@ -671,9 +677,15 @@ public: // Methods
 	void
 	addCamera(const CameraDescription &camera_description);
 
-	//! Adds a device to the sensor fusion
+	/*!
+	 * Adds a device to the sensor fusion.
+	 *
+	 * @param max_dead_reckoning_ns See @ref t_constellation_tracker_device_params::max_dead_reckoning_ns.
+	 */
 	void
-	addDevice(t_constellation_device_id_t id, const t_constellation_tracker_led_model *led_model);
+	addDevice(t_constellation_device_id_t id,
+	          const t_constellation_tracker_led_model *led_model,
+	          int64_t max_dead_reckoning_ns = 0);
 
 	//! Removes a device from the sensor fusion
 	void
@@ -703,7 +715,12 @@ public: // Methods
 	void
 	pushImuSample(t_constellation_device_id_t device_id, const xrt_imu_sample &sample);
 
-	//! Provides the latest unpredicted device pose for the requested timestamp.
+	/*!
+	 * Provides the latest unpredicted device pose for the requested timestamp.
+	 *
+	 * For a device with a dead-reckoning limit, a request further past the latest solve than that limit comes back
+	 * as the pose held at the limit, with zero velocity and the tracked bits cleared.
+	 */
 	void
 	getTrackedPose(t_constellation_device_id_t device_id,
 	               timepoint_ns requested_time_ns,

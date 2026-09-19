@@ -1459,7 +1459,7 @@ ConstellationTracker::addDevice(t_constellation_tracker_device_params *params, t
 		this->data_recorder->recordDeviceInfo(*new_device);
 	}
 
-	this->sensor_fusion->addDevice(id, new_device->search_model->led_model);
+	this->sensor_fusion->addDevice(id, new_device->search_model->led_model, params->max_dead_reckoning_ns);
 
 	return id;
 }
