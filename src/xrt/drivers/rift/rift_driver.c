@@ -499,8 +499,8 @@ rift_read_led_model(struct rift_hmd *hmd)
 			hmd->led_model.leds[hmd->led_model.led_count++] = (struct t_constellation_tracker_led){
 			    .position = pos,
 			    .normal = normal,
-			    .radius_m = 0.0035f,                   // 3.5mm
-			    .visibility_angle = DEG_TO_RAD(90.0f), // TODO: tune this value properly
+			    .radius_m = RIFT_LED_SIZE_M,                 // 3.5mm
+			    .visibility_angle = RIFT_LED_VISIBILITY_RAD, // TODO: tune this value properly
 			    .id = (t_constellation_led_id_it)position_report.position_index,
 			};
 		}
@@ -1549,6 +1549,42 @@ rift_add_to_constellation_tracker(struct rift_hmd *hmd, struct t_constellation_t
 
 	// Mark that we're using constellation poses now
 	hmd->use_constellation_poses = true;
+
+	os_mutex_lock(&hmd->device_mutex);
+	for (int i = 0; i < RADIO_STATE_TOUCH_CONTROLLERS_LEN; ++i) {
+
+		// just add controllers to constellation tracker
+		if (hmd->radio_state.touch_controllers[i] == NULL ||
+		    hmd->radio_state.touch_controllers[i]->device_type == RIFT_RADIO_DEVICE_TRACKED_OBJECT) {
+			continue;
+		}
+
+		struct rift_touch_controller *controller = hmd->radio_state.touch_controllers[i];
+		if (!controller->input.calibration_read) {
+			continue;
+		}
+
+		struct t_constellation_tracker_device_params controller_params = {
+		    .led_model = controller->input.calibration.led_model,
+		    .tracking_source = &controller->constellation_tracking_source,
+		};
+
+		controller->constellation_tracker = tracker;
+
+		ret = t_constellation_tracker_add_device(tracker, &controller_params, &controller->constellation_device,
+		                                         &controller->constellation_device_id);
+		if (ret < 0) {
+			HMD_ERROR(hmd, "Failed to add Oculus Touch controller to constellation tracker, reason %d",
+			          ret);
+			continue;
+		}
+
+		controller->base.tracking_origin = tracking_origin;
+		controller->constellation_imu_sink = controller_params.imu_sink;
+
+		controller->use_constellation = true;
+	}
+	os_mutex_unlock(&hmd->device_mutex);
 
 	return 0;
 }

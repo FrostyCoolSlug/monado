@@ -12,6 +12,7 @@
 #include "util/u_debug.h"
 
 #include "math/m_api.h"
+#include "math/m_vec3.h"
 
 #include "rift_internal.h"
 
@@ -91,24 +92,32 @@ rift_touch_calibration_parse(const char *calibration_data,
 		out_calibration->imu_position.z = imu_position_array[2].asDouble();
 
 		auto leds = tracked_object["ModelPoints"];
-		out_calibration->num_leds = leds.asObject().size();
-		out_calibration->leds =
-		    U_TYPED_ARRAY_CALLOC(struct rift_touch_controller_led, out_calibration->num_leds);
+		out_calibration->led_model.led_count = leds.asObject().size();
+		out_calibration->led_model.leds =
+		    U_TYPED_ARRAY_CALLOC(struct t_constellation_tracker_led, out_calibration->led_model.led_count);
 
-		for (size_t i = 0; i < out_calibration->num_leds; i++) {
+		for (size_t i = 0; i < out_calibration->led_model.led_count; i++) {
 			auto led_object = leds["Point" + std::to_string(i)];
 
-			auto &led = out_calibration->leds[i];
+			auto &led = out_calibration->led_model.leds[i];
 
-			led.position.x = led_object[0].asDouble();
-			led.position.y = led_object[1].asDouble();
-			led.position.z = led_object[2].asDouble();
-			led.normal.x = led_object[3].asDouble();
-			led.normal.y = led_object[4].asDouble();
-			led.normal.z = led_object[5].asDouble();
-			led.angles.x = led_object[6].asDouble();
-			led.angles.y = led_object[7].asDouble();
-			led.angles.z = led_object[8].asDouble();
+			led.position.x = (float)led_object[0].asDouble();
+			led.position.y = (float)led_object[1].asDouble();
+			led.position.z = (float)led_object[2].asDouble();
+			led.normal.x = (float)led_object[3].asDouble();
+			led.normal.y = (float)led_object[4].asDouble();
+			led.normal.z = (float)led_object[5].asDouble();
+			// The constellation tracker only takes one visibility angle, and precisely what this vector
+			// means is unclear, so for now we hardcode the visibility angle below.
+			/*
+			led.visibility_angle.x = (float)led_object[6].asDouble();
+			led.visibility_angle.y = (float)led_object[7].asDouble();
+			led.visibility_angle.z = (float)led_object[8].asDouble();
+			*/
+
+			led.visibility_angle = RIFT_LED_VISIBILITY_RAD;
+			led.radius_m = RIFT_LED_SIZE_M;
+			led.id = i;
 		}
 	} catch (const std::exception &e) {
 		U_LOG_E("Exception while parsing touch controller calibration JSON: %s", e.what());
