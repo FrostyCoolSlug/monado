@@ -190,6 +190,14 @@ touch_controller_constellation_tracking_source_get_tracked_pose(
 	bool is_fused;
 	if (!touch_controller_get_model_relation(controller, when_ns, out_relation, &is_fused)) {
 		*out_relation = (struct xrt_space_relation)XRT_SPACE_RELATION_ZERO;
+		return;
+	}
+
+	if (!is_fused) {
+		// A raw camera pose is just the tracker's own last answer, so it says nothing independent about which
+		// controller is which. Don't let it be mistaken for IMU-anchored orientation.
+		out_relation->relation_flags &=
+		    ~(XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT | XRT_SPACE_RELATION_POSITION_TRACKED_BIT);
 	}
 }
 

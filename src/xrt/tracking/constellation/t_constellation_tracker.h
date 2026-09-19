@@ -103,6 +103,19 @@ struct t_constellation_tracker_device_params
 	 * Zero means no limit, which is how a device that stays in view (a headset) behaves.
 	 */
 	int64_t max_dead_reckoning_ns;
+
+	/*!
+	 * If non-zero, a pose the cameras find for this device is thrown away when its orientation is further than this
+	 * many radians from the orientation the device's tracking source predicted, but only while that prediction is
+	 * itself being actively tracked (its orientation has the tracked bit set).
+	 *
+	 * Devices that look alike, such as a left and a right controller, are told apart by nothing except which model
+	 * fits which blobs, and once one has wrongly claimed the other's blobs it keeps them. A tracking source that
+	 * fuses the device's IMU knows the orientation independently of that, so it is the only thing that can notice.
+	 *
+	 * Zero disables the check.
+	 */
+	float orientation_veto_rad;
 };
 
 enum t_constellation_tracker_flags

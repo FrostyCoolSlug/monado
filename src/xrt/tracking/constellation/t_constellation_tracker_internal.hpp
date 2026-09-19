@@ -114,6 +114,10 @@ struct DeviceState
 
 	//! Whether the device needs to have the slow processing thread run over it
 	bool needs_slow_processing{false};
+
+	//! Whether the prior's orientation was being actively tracked, rather than held or stale. See
+	//! t_constellation_tracker_device_params::orientation_veto_rad.
+	bool prior_orientation_tracked{false};
 };
 
 struct CameraSample
@@ -294,6 +298,18 @@ public: // Methods (t_constellation_tracker.cpp)
 	              const std::optional<xrt_space_relation> &Tcv_cam_device_prior,
 	              const xrt_pose &Tcv_cam_device_candidate);
 
+	/*!
+	 * Whether a pose found for @p device should be discarded because its orientation contradicts the prior, which
+	 * is what tells us the wrong blobs were used. Only ever true for devices that opted in, while the prior is being
+	 * actively tracked. See t_constellation_tracker_device_params::orientation_veto_rad.
+	 */
+	bool
+	poseVetoedByPrior(Device *device,
+	                  const CameraSample &sample,
+	                  const DeviceState &device_state,
+	                  const std::optional<xrt_space_relation> &Tcv_cam_device_prior,
+	                  const xrt_pose &Tcv_cam_device_candidate);
+
 	bool
 	tryDeviceBlobRecovery(Device *device,
 	                      CameraSample &sample,
@@ -382,6 +398,9 @@ public: // Fields
 	xrt_vec3 prior_pos_error{MIN_POS_ERROR, MIN_POS_ERROR, MIN_POS_ERROR};
 	xrt_vec3 prior_rot_error{MIN_ROT_ERROR, MIN_ROT_ERROR, MIN_ROT_ERROR};
 	float gravity_error_rad{MIN_ROT_ERROR}; /* Gravity vector uncertainty in radians 0..M_PI */
+
+	//! The camera timestamp the last "pose vetoed" warning was logged at, so a persistent problem does not flood.
+	std::atomic<timepoint_ns> last_veto_log_ns{0};
 
 	mutable os::Mutex data_lock;
 	struct

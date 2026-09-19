@@ -402,6 +402,42 @@ Camera::deferSampleToSlowThread(CameraSample &sample)
 }
 
 bool
+Camera::poseVetoedByPrior(Device *device,
+                          const CameraSample &sample,
+                          const DeviceState &device_state,
+                          const std::optional<xrt_space_relation> &Tcv_cam_device_prior,
+                          const xrt_pose &Tcv_cam_device_candidate)
+{
+	const float veto_rad = device->params.orientation_veto_rad;
+	if (veto_rad <= 0.0f || !device_state.prior_orientation_tracked || !Tcv_cam_device_prior.has_value()) {
+		return false;
+	}
+
+	const xrt_quat &a = Tcv_cam_device_candidate.orientation;
+	const xrt_quat &b = Tcv_cam_device_prior->pose.orientation;
+
+	// The angle between two unit quaternions, where q and -q are the same rotation.
+	const float dot = std::min(1.0f, std::fabs(a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w));
+	const float angle_rad = 2.0f * std::acos(dot);
+
+	if (angle_rad <= veto_rad) {
+		return false;
+	}
+
+	// Once a second is plenty to notice, and enough to not bury everything else if this is stuck.
+	timepoint_ns last_log_ns = device->last_veto_log_ns.load();
+	if (sample.timestamp_ns - last_log_ns > U_TIME_1S_IN_NS &&
+	    device->last_veto_log_ns.exchange(sample.timestamp_ns) == last_log_ns) {
+		CT_WARN(this->tracker,
+		        "Device %d: the pose found from the cameras is %.0f degrees away from the tracked orientation "
+		        "(limit %.0f). Rejecting it, the wrong blobs were probably matched to this device.",
+		        device->id, (double)RAD_TO_DEG(angle_rad), (double)RAD_TO_DEG(veto_rad));
+	}
+
+	return true;
+}
+
+bool
 Camera::tryDevicePose(Device *device,
                       CameraSample &sample,
                       DeviceState &device_state,
@@ -433,7 +469,8 @@ Camera::tryDevicePose(Device *device,
 		                           NULL);                     //
 	}
 
-	if (POSE_HAS_FLAGS(&score, POSE_MATCH_GOOD | POSE_MATCH_LED_IDS)) {
+	if (POSE_HAS_FLAGS(&score, POSE_MATCH_GOOD | POSE_MATCH_LED_IDS) &&
+	    !this->poseVetoedByPrior(device, sample, device_state, Tcv_cam_device_prior, Tcv_cam_device_candidate)) {
 		this->pushPose(sample,                   //
 		               device_state,             //
 		               device,                   //
@@ -508,6 +545,12 @@ Camera::tryDeviceBlobRecovery(Device *device,
 	CT_DEBUG(tracker, "Camera %p RANSAC-PnP blob recovery for device %d from %u blobs succeeded", (void *)this,
 	         device->id, sample.blob_count);
 	Tcv_cam_device = Tcv_cam_device_optimized;
+
+	// Recovery trusts the labels it is given, so if they are for the wrong blobs this is the only thing that will
+	// ever get them cleared: failing here makes the caller wipe them.
+	if (this->poseVetoedByPrior(device, sample, device_state, Tcv_cam_device_prior, Tcv_cam_device)) {
+		return false;
+	}
 
 	pose_metrics score;
 	// Evaluate the pose, using the prior if available
@@ -715,6 +758,11 @@ Camera::processSampleSlow(CameraSample &sample)
 			    &cv_camera_gravity_vector,                         //
 			    device->gravity_error_rad,                         //
 			    &score);                                           //
+			if (found_pose && this->poseVetoedByPrior(device, sample, device_state,
+			                                          device_state.Tcv_cam_device_predicted, Tcv_cam_device)) {
+				found_pose = false;
+			}
+
 			if (found_pose) {
 				this->pushPose(sample,         //
 				               device_state,   //
@@ -800,6 +848,9 @@ Camera::processSampleFast(CameraSample &sample)
 		device_state.Txr_world_device_prior =
 		    prior_pose_valid ? std::optional<xrt_pose>(device_predicted_relation.pose) : std::nullopt;
 		device_state.Tcv_cam_device_predicted = Tcv_cam_device_predicted;
+		device_state.prior_orientation_tracked =
+		    prior_pose_valid &&
+		    (device_predicted_relation.relation_flags & XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT) != 0;
 	}
 
 	// Borrowed pointers, only valid while we hold the device lock taken above.

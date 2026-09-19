@@ -60,6 +60,14 @@
  */
 #define RIFT_TOUCH_CONTROLLER_MAX_DEAD_RECKONING_NS (U_TIME_1MS_IN_NS * 500LL)
 
+/*!
+ * How far, in radians, a pose from the cameras may disagree with a controller's IMU-anchored orientation before it is
+ * assumed to have been matched to the wrong blobs and is thrown away. This is 45 degrees: real disagreement is a few
+ * degrees, so this is deliberately loose, and it only has to catch a controller's blobs being claimed by the other
+ * one.
+ */
+#define RIFT_TOUCH_CONTROLLER_ORIENTATION_VETO_RAD 0.7853982f
+
 #define CALIBRATION_HASH_BYTE_OFFSET 0x1bf0
 #define CALIBRATION_HASH_BYTE_LENGTH 0x10
 

@@ -1570,6 +1570,9 @@ rift_add_to_constellation_tracker(struct rift_hmd *hmd, struct t_constellation_t
 		    .tracking_source = &controller->constellation_tracking_source,
 		    // Unlike the HMD, controllers are often out of the cameras' view.
 		    .max_dead_reckoning_ns = RIFT_TOUCH_CONTROLLER_MAX_DEAD_RECKONING_NS,
+		    // The left and right controllers are near mirror images of each other, and nothing but the fit
+		    // tells them apart, so let the IMU-anchored pose overrule a fit that puts one on the other.
+		    .orientation_veto_rad = RIFT_TOUCH_CONTROLLER_ORIENTATION_VETO_RAD,
 		};
 
 		t_constellation_device_id_t controller_device_id;
