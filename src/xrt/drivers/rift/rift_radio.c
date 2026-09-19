@@ -398,7 +398,7 @@ touch_controller_constellation_device_push_constellation_tracker_sample(
 	    container_of(connection, struct rift_touch_controller, constellation_device);
 
 	struct xrt_space_relation relation = XRT_SPACE_RELATION_ZERO;
-	relation.pose = sample->pose;
+	relation.pose = sample->world_pose;
 	relation.relation_flags = XRT_SPACE_RELATION_ORIENTATION_TRACKED_BIT |
 	                          XRT_SPACE_RELATION_ORIENTATION_VALID_BIT | XRT_SPACE_RELATION_POSITION_TRACKED_BIT |
 	                          XRT_SPACE_RELATION_POSITION_VALID_BIT;
