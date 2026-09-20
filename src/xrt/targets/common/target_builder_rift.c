@@ -96,7 +96,7 @@ rift_builder(struct xrt_builder *xb)
 
 DEBUG_GET_ONCE_LOG_OPTION(rift_log, "RIFT_LOG", U_LOGGING_WARN)
 DEBUG_GET_ONCE_BOOL_OPTION(rift_prober_enable, "RIFT_PROBER_ENABLE", DEFAULT_ENABLE)
-DEBUG_GET_ONCE_BOOL_OPTION(rift_prober_constellation_tracking, "RIFT_PROBER_CONSTELLATION_TRACKING", false)
+DEBUG_GET_ONCE_BOOL_OPTION(rift_prober_constellation_tracking, "RIFT_PROBER_CONSTELLATION_TRACKING", true)
 
 #undef DEFAULT_ENABLE
 
